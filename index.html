@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="alternate icon" type="image/x-icon" href="/favicon.svg" />
+
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    />
+
+    <meta name="mobile-web-app-capable" content="yes" />
+
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta
+      name="apple-mobile-web-app-status-bar-style"
+      content="black-translucent"
+    />
+
+    <link rel="manifest" href="/manifest.json" />
+
+    <title>Sushi Man - Totem de Autoatendimento</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+
+    <style>
+      /* 🎨 CORES DINÂMICAS MULTI-TENANT - Tema Japonês Sushi Man */
+      :root {
+        --color-primary: #dc2626; /* red-600 - vermelho japonês */
+        --color-secondary: #1f2937; /* gray-800 - preto profundo */
+        --color-accent: #ef4444; /* red-500 - vermelho accent */
+        --color-primary-hover: #b91c1c; /* red-700 */
+        --color-primary-active: #991b1b; /* red-800 */
+        --color-primary-light: #fecaca; /* red-200 */
+        --color-primary-lighter: #fee2e2; /* red-50 */
+      }
+
+      body {
+        font-family: "Poppins", sans-serif;
+        /* IMPEDE O "PULL-TO-REFRESH" (PUXAR PRA CIMA) QUE ESTRAGA O KIOSK */
+        overscroll-behavior-y: contain;
+        /* Desabilita seleção de texto para parecer app */
+        user-select: none;
+        -webkit-user-select: none;
+      }
+
+      /* Animações existentes */
+      @keyframes fade-in-down {
+        0% {
+          opacity: 0;
+          transform: translateY(-20px);
+        }
+        100% {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+      .animate-fade-in-down {
+        animation: fade-in-down 0.5s ease-out forwards;
+      }
+    </style>
+  </head>
+  <body class="bg-stone-50">
+    <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
+  </body>
+</html>
