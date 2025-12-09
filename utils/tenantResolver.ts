@@ -2,15 +2,15 @@
  * 🏪 TENANT RESOLVER - Identificação da Loja (Multi-tenant)
  *
  * Identifica qual loja está sendo acessada baseada no subdomínio da URL.
- * Exemplo: pastelaria-joao.kioskpro.com.br -> storeId: "pastelaria-joao"
+ * Exemplo: sushiman.selfmachine.com.br -> storeId: "sushiman1"
  *
  * PRIORIDADE:
  * 1. Variável de ambiente (VITE_DEFAULT_STORE_ID) - MÁXIMA PRIORIDADE
  * 2. Subdomínio (exceto 'www')
- * 3. Fallback padrão (pastelaria_01)
+ * 3. Fallback padrão (sushiman1)
  */
 
-const DEFAULT_STORE_ID = "pastelaria_01"; // Loja principal padrão
+const DEFAULT_STORE_ID = "sushiman1"; // Loja principal padrão
 
 /**
  * Extrai o storeId do subdomínio da URL atual
