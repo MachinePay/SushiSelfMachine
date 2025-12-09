@@ -14,11 +14,11 @@ export const getMenuSuggestion = async (
   userName?: string
 ): Promise<string> => {
   const clientName = userName || "amigo(a)";
- 
+
   // Analisa o que está no carrinho
-  const cartDetails = cartItems.map((item) => 
-    `${item.quantity}x ${item.name} (${item.category})`
-  ).join(", ");
+  const cartDetails = cartItems
+    .map((item) => `${item.quantity}x ${item.name} (${item.category})`)
+    .join(", ");
 
   const categoriesInCart = new Set(cartItems.map((i) => i.category));
   const hasSalgado = categoriesInCart.has("Pastel");
@@ -30,17 +30,20 @@ export const getMenuSuggestion = async (
   if (cartItems.length === 0) {
     contexto = "O carrinho está vazio. Sugira um pastel popular para começar.";
   } else if (hasSalgado && !hasBebida) {
-    contexto = "Tem pastel no carrinho mas falta bebida. Sugira uma bebida gelada para acompanhar, mencione que está calor ou que combina perfeitamente.";
+    contexto =
+      "Tem pastel no carrinho mas falta bebida. Sugira uma bebida gelada para acompanhar, mencione que está calor ou que combina perfeitamente.";
   } else if (hasSalgado && !hasDoce) {
-    contexto = "Tem pastel salgado mas falta sobremesa. Sugira um pastel doce (Nutella, Romeu e Julieta, etc) para finalizar com chave de ouro.";
+    contexto =
+      "Tem pastel salgado mas falta sobremesa. Sugira um pastel doce (Nutella, Romeu e Julieta, etc) para finalizar com chave de ouro.";
   } else if (!hasSalgado && hasBebida) {
     contexto = "Só tem bebida. Sugira um pastel salgado para acompanhar.";
   } else {
-    contexto = "O carrinho está completo. Elogie a escolha e sugira adicionar mais uma unidade ou experimentar outro sabor.";
+    contexto =
+      "O carrinho está completo. Elogie a escolha e sugira adicionar mais uma unidade ou experimentar outro sabor.";
   }
 
   const prompt = `
-Você é o Chef da Pastelaria Kiosk Pro. Fale diretamente com ${clientName} de forma calorosa e amigável.
+Você é o Chef do Sushi Man. Fale diretamente com ${clientName} de forma calorosa e amigável.
 
 Carrinho atual: ${cartDetails || "vazio"}
 
@@ -61,7 +64,7 @@ Exemplo: "${clientName}, que tal uma Coca-Cola geladinha? Vai combinar perfeitam
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ prompt }),
-    }); 
+    });
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
@@ -90,12 +93,14 @@ export const getDynamicCartSuggestion = async (
   if (cartItems.length === 0) return "";
 
   const clientName = userName || "amigo(a)";
-  const cartNames = cartItems.map((item) => `${item.quantity}x ${item.name}`).join(", ");
+  const cartNames = cartItems
+    .map((item) => `${item.quantity}x ${item.name}`)
+    .join(", ");
 
   // Analisa categorias e produtos específicos
   const categoriesInCart = new Set(cartItems.map((i) => i.category));
-  const productNames = cartItems.map(i => i.name.toLowerCase());
-  
+  const productNames = cartItems.map((i) => i.name.toLowerCase());
+
   let sugestao = "";
   let motivo = "";
 
@@ -114,7 +119,7 @@ export const getDynamicCartSuggestion = async (
   }
 
   const prompt = `
-Você é o Chef da pastelaria falando com ${clientName}.
+Você é o Chef do Sushi Man falando com ${clientName}.
 
 Carrinho: ${cartNames}
 
@@ -131,7 +136,7 @@ Exemplo: "${clientName}, que tal adicionar uma Coca geladinha? Vai combinar perf
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ prompt }),
-    }); 
+    });
 
     const data = await response.json();
     return data.text || "";
@@ -151,12 +156,16 @@ export const getChefMessage = async (
   const clientName = userName || "amigo(a)";
   const isNewCustomer = !userHistory || userHistory.length === 0;
   const orderCount = userHistory?.length || 0;
- 
+
   const prompt = `
 Você é o Chef da Pastelaria Kiosk Pro. 
 
 Cliente: ${clientName}
-Status: ${isNewCustomer ? "Cliente novo, primeira visita" : `Cliente fiel com ${orderCount} pedidos anteriores`}
+Status: ${
+    isNewCustomer
+      ? "Cliente novo, primeira visita"
+      : `Cliente fiel com ${orderCount} pedidos anteriores`
+  }
 
 Crie uma mensagem calorosa e pessoal (máximo 25 palavras):
 - Use o nome ${clientName}
@@ -173,7 +182,7 @@ Exemplo recorrente: "${clientName}, que alegria ter você aqui de novo! Preparei
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ prompt }),
-    }); 
+    });
 
     const data = await response.json();
     return (
@@ -181,7 +190,7 @@ Exemplo recorrente: "${clientName}, que alegria ter você aqui de novo! Preparei
       `Olá ${clientName}, o Chef preparou tudo com carinho para você!`
     );
   } catch (error) {
-    return `Olá ${clientName}, seja bem-vindo à nossa pastelaria!`;
+    return `Olá ${clientName}, seja bem-vindo ao Sushi Man!`;
   }
 };
 
@@ -203,7 +212,7 @@ export const sendMessageToChatbot = async (
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ message }),
-    }); 
+    });
 
     if (!response.ok) throw new Error("Erro no chat");
 

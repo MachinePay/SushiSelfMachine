@@ -1,5 +1,5 @@
 /**
- * Representa um produto disponível na pastelaria.
+ * Representa um produto disponível no restaurante.
  *
  * @interface Product
  *

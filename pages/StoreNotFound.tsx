@@ -41,7 +41,7 @@ const StoreNotFound: React.FC = () => {
         <div className="mt-8">
           <a
             href="/"
-            className="inline-block px-6 py-3 bg-amber-500 text-white font-semibold rounded-lg hover:bg-amber-600 transition-colors"
+            className="inline-block px-6 py-3 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700 transition-colors"
           >
             Voltar ao Início
           </a>

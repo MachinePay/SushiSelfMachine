@@ -220,7 +220,7 @@ const AdminCategoriesPage: React.FC = () => {
                   </button>
                   <button
                     onClick={() => handleDeleteCategory(category)}
-                    className="flex-1 bg-red-500 text-white py-2 rounded-lg font-semibold hover:bg-red-600 transition-colors"
+                    className="flex-1 bg-red-600 text-white py-2 rounded-lg font-semibold hover:bg-red-700 transition-colors"
                   >
                     🗑️ Deletar
                   </button>

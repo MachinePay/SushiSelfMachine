@@ -54,7 +54,7 @@ const Header: React.FC = () => {
                 style={({ isActive }) =>
                   isActive ? activeLinkStyle : undefined
                 }
-                className="text-stone-500 hover:text-red-600 transition-colors font-medium"
+                className="text-stone-500 hover:text-amber-600 transition-colors font-medium"
               >
                 Cardápio
               </NavLink>
@@ -64,7 +64,7 @@ const Header: React.FC = () => {
             <NavLink
               to="/cozinha"
               style={({ isActive }) => (isActive ? activeLinkStyle : undefined)}
-              className="text-stone-500 hover:text-red-600 transition-colors font-medium"
+              className="text-stone-500 hover:text-amber-600 transition-colors font-medium"
             >
               Pedidos Cozinha
             </NavLink>
@@ -77,7 +77,7 @@ const Header: React.FC = () => {
                 style={({ isActive }) =>
                   isActive ? activeLinkStyle : undefined
                 }
-                className="text-stone-500 hover:text-red-600 transition-colors font-medium"
+                className="text-stone-500 hover:text-amber-600 transition-colors font-medium"
               >
                 Produtos
               </NavLink>
@@ -86,7 +86,7 @@ const Header: React.FC = () => {
                 style={({ isActive }) =>
                   isActive ? activeLinkStyle : undefined
                 }
-                className="text-stone-500 hover:text-red-600 transition-colors font-medium"
+                className="text-stone-500 hover:text-amber-600 transition-colors font-medium"
               >
                 Relatórios IA
               </NavLink>

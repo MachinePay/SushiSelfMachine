@@ -48,7 +48,7 @@ const AdminReportsPage: React.FC = () => {
       const analysis = analyzeOrders(orders);
 
       // Gerar insights com IA
-      const prompt = `Você é um consultor de negócios para uma pastelaria. Analise os seguintes dados e forneça recomendações estratégicas:
+      const prompt = `Você é um consultor de negócios para um restaurante de sushi. Analize os seguintes dados e forneça recomendações estratégicas:
 
 📊 DADOS DO MÊS:
 - Faturamento Total: R$ ${analysis.monthlyRevenue.toFixed(2)}
@@ -237,11 +237,11 @@ Seja direto e focado em ações práticas. Use emojis para deixar mais visual.`;
               </p>
             </div>
 
-            <div className="bg-gradient-to-br from-amber-50 to-amber-100 p-6 rounded-xl shadow-lg border-l-4 border-amber-500">
-              <h3 className="text-sm font-semibold text-amber-800 mb-2">
+            <div className="bg-gradient-to-br from-red-50 to-red-100 p-6 rounded-xl shadow-lg border-l-4 border-red-600">
+              <h3 className="text-sm font-semibold text-red-800 mb-2">
                 🏆 Produto Top
               </h3>
-              <p className="text-xl font-bold text-amber-900">
+              <p className="text-xl font-bold text-gray-900">
                 {recommendation.topProducts[0]?.name || "N/A"}
               </p>
             </div>
@@ -314,12 +314,12 @@ Seja direto e focado em ações práticas. Use emojis para deixar mais visual.`;
                 {recommendation.peakHours.map((hour) => (
                   <div
                     key={hour.hour}
-                    className="flex justify-between items-center p-3 bg-amber-50 rounded-lg"
+                    className="flex justify-between items-center p-3 bg-red-50 rounded-lg"
                   >
                     <span className="font-semibold text-slate-700">
                       {hour.hour}
                     </span>
-                    <span className="text-amber-600 font-bold">
+                    <span className="text-red-600 font-bold">
                       {hour.orders} pedidos
                     </span>
                   </div>

@@ -1,10 +1,8 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 // Lista de vídeos disponíveis na pasta public/videos
-const LOCAL_VIDEOS = [
-  '/videos/videoscreensave.mp4',
-];
+const LOCAL_VIDEOS = ["/videos/videoscreensave.mp4"];
 
 export default function ScreensaverPage() {
   const navigate = useNavigate();
@@ -26,14 +24,14 @@ export default function ScreensaverPage() {
   useEffect(() => {
     // Qualquer clique na tela leva para login
     const handleClick = () => {
-      navigate('/login');
+      navigate("/login");
     };
-    window.addEventListener('click', handleClick);
-    return () => window.removeEventListener('click', handleClick);
+    window.addEventListener("click", handleClick);
+    return () => window.removeEventListener("click", handleClick);
   }, [navigate]);
 
   const handleVideoError = () => {
-    console.error('Erro ao carregar vídeo:', videos[current]);
+    console.error("Erro ao carregar vídeo:", videos[current]);
     setVideoError(true);
   };
 
@@ -56,33 +54,34 @@ export default function ScreensaverPage() {
             onError={handleVideoError}
             onLoadedData={handleVideoLoad}
           />
-          
+
           {/* Mensagem com degradê e animação sobre o vídeo */}
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
             <div className="text-center">
-                <h1 
+              <h1
                 className="text-7xl font-bold tracking-tight animate-pulse-slow"
                 style={{
-                  color: '#ffffff',
-                  textShadow: '0 0 40px rgba(245, 158, 11, 0.9), 0 0 80px rgba(245, 158, 11, 0.6), 0 4px 12px rgba(0, 0, 0, 0.5)',
-                  filter: 'drop-shadow(0 8px 16px rgba(245, 158, 11, 0.4))',
+                  color: "#ffffff",
+                  textShadow:
+                    "0 0 40px rgba(245, 158, 11, 0.9), 0 0 80px rgba(245, 158, 11, 0.6), 0 4px 12px rgba(0, 0, 0, 0.5)",
+                  filter: "drop-shadow(0 8px 16px rgba(245, 158, 11, 0.4))",
                 }}
-                >
+              >
                 Clique para começar seu pedido!
-                </h1>
-              
+              </h1>
+
               {/* Indicador visual adicional */}
-              <div 
+              <div
                 className="mt-8 text-6xl animate-bounce"
                 style={{
-                  filter: 'drop-shadow(0 4px 12px rgba(245, 158, 11, 0.8))',
+                  filter: "drop-shadow(0 4px 12px rgba(245, 158, 11, 0.8))",
                 }}
               >
                 👆
               </div>
             </div>
           </div>
-          
+
           {/* CSS customizado para animações */}
           <style>{`
             @keyframes gradient {
@@ -103,14 +102,12 @@ export default function ScreensaverPage() {
         </>
       ) : (
         <div className="text-center p-8">
-          <div className="text-6xl mb-8">🍰</div>
-          <h1 className="text-5xl font-bold text-amber-900 mb-4">
-            Pastelaria Kiosk Pro
-          </h1>
-          <p className="text-2xl text-amber-700 mb-8">
+          <div className="text-6xl mb-8">🍣</div>
+          <h1 className="text-5xl font-bold text-gray-900 mb-4">Sushi Man</h1>
+          <p className="text-2xl text-gray-700 mb-8">
             Bem-vindo! Toque na tela para começar
           </p>
-          <div className="animate-bounce text-amber-600 text-xl">
+          <div className="animate-bounce text-red-600 text-xl">
             👆 Toque aqui
           </div>
         </div>

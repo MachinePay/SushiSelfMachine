@@ -611,10 +611,10 @@ const MenuPage: React.FC = () => {
       <main className="flex-1 flex flex-col h-full relative overflow-hidden">
         {/* Header Mobile */}
         <header className="md:hidden bg-white/90 backdrop-blur-md p-4 sticky top-0 z-20 border-b border-stone-200 shadow-sm flex justify-between items-center">
-          <h2 className="font-bold text-amber-800 text-xl">
+          <h2 className="font-bold text-gray-800 text-xl">
             {selectedCategory || "Cardápio"}
           </h2>
-          <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center text-amber-700 font-bold text-sm border border-amber-200">
+          <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center text-red-700 font-bold text-sm border border-red-200">
             {currentUser?.name?.charAt(0) || "C"}
           </div>
         </header>
@@ -623,7 +623,7 @@ const MenuPage: React.FC = () => {
         <div className="flex-1 overflow-y-auto p-4 md:p-8 pb-48 md:pb-8 scroll-smooth">
           {/* Mensagens IA */}
           <div className="max-w-6xl mx-auto space-y-6 mb-8">
-            <div className="bg-white border-l-8 border-amber-400 p-5 rounded-r-xl shadow-sm">
+            <div className="bg-white border-l-8 border-red-400 p-5 rounded-r-xl shadow-sm">
               <h3 className="font-bold text-stone-800 text-base md:text-lg flex items-center gap-2">
                 👨‍🍳 Chef
               </h3>

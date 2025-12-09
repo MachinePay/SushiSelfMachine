@@ -127,7 +127,7 @@ const ProductForm: React.FC<ProductFormProps> = ({
     <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50">
       <div className="bg-white p-8 rounded-2xl shadow-2xl w-full max-w-lg">
         {/* Título muda conforme edição ou criação */}
-        <h2 className="text-2xl font-bold mb-6 text-amber-800">
+        <h2 className="text-2xl font-bold mb-6 text-gray-800">
           {product ? "Editar Produto" : "Adicionar Produto"}
         </h2>
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -273,7 +273,7 @@ const ProductForm: React.FC<ProductFormProps> = ({
             {/* Botão salvar submete o formulário */}
             <button
               type="submit"
-              className="bg-amber-600 text-white font-semibold py-2 px-6 rounded-lg hover:bg-amber-700"
+              className="bg-red-600 text-white font-semibold py-2 px-6 rounded-lg hover:bg-red-700"
             >
               Salvar
             </button>
@@ -460,7 +460,7 @@ const AdminPage: React.FC = () => {
     <div className="container mx-auto p-6">
       {/* Cabeçalho */}
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-4xl font-bold text-amber-800">
+        <h1 className="text-4xl font-bold text-gray-800">
           Painel Administrativo
         </h1>
         <div className="flex gap-3">
@@ -493,7 +493,7 @@ const AdminPage: React.FC = () => {
                 navigate("/admin/login");
               }
             }}
-            className="bg-red-500 text-white font-bold py-2 px-6 rounded-lg hover:bg-red-600 transition-colors shadow-md"
+            className="bg-amber-500 text-white font-bold py-2 px-6 rounded-lg hover:bg-amber-600 transition-colors shadow-md"
           >
             🚪 Sair
           </button>
@@ -664,7 +664,7 @@ const AdminPage: React.FC = () => {
                       setEditingProduct(product);
                       setIsFormOpen(true);
                     }}
-                    className="text-amber-600 hover:text-amber-900 mr-4"
+                    className="text-red-600 hover:text-red-900 mr-4"
                   >
                     Editar
                   </button>
