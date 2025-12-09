@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 // Lista de vídeos disponíveis na pasta public/videos
-const LOCAL_VIDEOS = ["/videos/videoscreensave.mp4"];
+const LOCAL_VIDEOS = ["/videos/scrensaveSushi.mp4"];
 
 export default function ScreensaverPage() {
   const navigate = useNavigate();
