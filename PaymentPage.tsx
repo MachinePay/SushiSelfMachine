@@ -377,10 +377,10 @@ const PaymentPage: React.FC = () => {
 
   return (
     <div className="container mx-auto p-6 max-w-4xl">
-      <h1 className="text-3xl font-bold text-gray-800 mb-8 flex items-center gap-2">
+      <h1 className="text-3xl font-bold text-amber-800 mb-8 flex items-center gap-2">
         <button
           onClick={() => navigate("/menu")}
-          className="text-red-600 hover:bg-red-100 p-2 rounded-full"
+          className="text-amber-600 hover:bg-amber-100 p-2 rounded-full"
           disabled={status === "processing"}
         >
           ←
@@ -407,7 +407,7 @@ const PaymentPage: React.FC = () => {
           </ul>
           <div className="border-t pt-4 flex justify-between items-center">
             <span className="text-lg text-stone-500">Total a pagar:</span>
-            <span className="text-3xl font-bold text-red-600">
+            <span className="text-3xl font-bold text-amber-600">
               R$ {cartTotal.toFixed(2)}
             </span>
           </div>
@@ -467,7 +467,7 @@ const PaymentPage: React.FC = () => {
           {status === "processing" ? (
             <button
               onClick={handleCancelPayment}
-              className="mt-4 w-full py-4 rounded-xl font-bold text-xl bg-red-600 text-white hover:bg-red-700 shadow-lg transition-transform hover:scale-105"
+              className="mt-4 w-full py-4 rounded-xl font-bold text-xl bg-amber-600 text-white hover:bg-amber-700 shadow-lg transition-transform hover:scale-105"
             >
               ❌ Cancelar Pagamento
             </button>
@@ -500,14 +500,14 @@ const PaymentOption: React.FC<{
     onClick={onClick}
     className={`p-4 rounded-xl border-2 flex items-center gap-4 transition-all duration-200 text-left ${
       selected
-        ? "border-red-500 bg-red-50 shadow-md transform scale-102"
-        : "border-stone-200 bg-white hover:border-red-300 hover:bg-stone-50"
+        ? "border-amber-500 bg-amber-50 shadow-md transform scale-102"
+        : "border-stone-200 bg-white hover:border-amber-300 hover:bg-stone-50"
     }`}
   >
     <span className="text-3xl">{icon}</span>
     <span
       className={`font-semibold text-lg ${
-        selected ? "text-gray-900" : "text-stone-600"
+        selected ? "text-amber-900" : "text-stone-600"
       }`}
     >
       {label}
