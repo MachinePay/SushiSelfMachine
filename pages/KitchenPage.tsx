@@ -167,20 +167,27 @@ const KitchenPage: React.FC = () => {
   const fetchOrders = useCallback(async () => {
     try {
       const storeId = getCurrentStoreId();
-      const resp = await fetch(`${BACKEND_URL}/api/ai/kitchen-priority`, {
+
+      // Busca pedidos ativos da cozinha (com autenticação)
+      const resp = await authenticatedFetch(`${BACKEND_URL}/api/orders`, {
         headers: {
           "x-store-id": storeId,
         },
       });
-      const data: AIKitchenResponse = await resp.json();
 
-      setActiveOrders(data.orders);
-      setAiEnabled(data.aiEnabled);
-      setReasoning(data.reasoning || data.message || "");
+      if (!resp.ok) {
+        throw new Error(`Erro ao buscar pedidos: ${resp.status}`);
+      }
+
+      const orders: Order[] = await resp.json();
+
+      setActiveOrders(orders);
+      setAiEnabled(false); // Por enquanto, sem IA
+      setReasoning("");
 
       // --- LÓGICA DE ÁUDIO ---
       if (audioEnabled) {
-        data.orders.forEach((order) => {
+        orders.forEach((order) => {
           if (!seenOrderIds.current.has(order.id)) {
             // Novo pedido detectado!
             seenOrderIds.current.add(order.id);
@@ -200,7 +207,7 @@ const KitchenPage: React.FC = () => {
         });
       } else {
         // Se áudio desligado, marca como visto silenciosamente
-        data.orders.forEach((o) => seenOrderIds.current.add(o.id));
+        orders.forEach((o) => seenOrderIds.current.add(o.id));
       }
     } catch (err) {
       console.error("❌ Erro ao carregar pedidos:", err);
