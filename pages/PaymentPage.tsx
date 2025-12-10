@@ -64,11 +64,9 @@ const PaymentPage: React.FC = () => {
     queryKey: ["paymentStatus", activePayment?.id, activePayment?.type],
     queryFn: async () => {
       if (!activePayment) return null;
-      const result = await checkPaymentStatus(
-        activePayment.id,
-        activePayment.type
-      );
-      return result.data;
+      const result = await checkPaymentStatus(activePayment.id);
+      if (!result.success) throw new Error(result.error || "Erro ao verificar status");
+      return result;
     },
     // Só executa se tiver um pagamento ativo e não tiver finalizado ainda
     enabled: !!activePayment && status === "processing",

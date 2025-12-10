@@ -47,7 +47,6 @@ export async function createPixPayment(paymentData: {
       success: true,
       paymentId: response.data.id || response.data.paymentId, // Backend retorna "id"
       qrCode: response.data.qr_code_base64 || response.data.qrCodeBase64, // Backend retorna snake_case
-
       qrCodeCopyPaste: response.data.qr_code || response.data.qrCodeCopyPaste, // Backend retorna snake_case
       status: response.data.status,
     };
