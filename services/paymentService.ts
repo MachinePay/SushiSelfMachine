@@ -43,11 +43,12 @@ export async function createPixPayment(paymentData: {
       payerName: paymentData.payerName || "Cliente",
     });
 
+    // ⚠️ IMPORTANTE: Backend retorna campos em snake_case
     return {
       success: true,
-      paymentId: response.data.paymentId,
-      qrCode: response.data.qrCodeBase64,
-      qrCodeCopyPaste: response.data.qrCodeCopyPaste,
+      paymentId: response.data.id || response.data.paymentId,
+      qrCode: response.data.qr_code_base64 || response.data.qrCodeBase64,
+      qrCodeCopyPaste: response.data.qr_code || response.data.qrCodeCopyPaste,
       status: response.data.status,
     };
   } catch (error: any) {

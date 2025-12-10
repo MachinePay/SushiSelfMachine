@@ -6,6 +6,12 @@ import { useCart } from "../contexts/CartContext";
 import { useAuth } from "../contexts/AuthContext";
 import { clearPaymentQueue } from "../services/pointService";
 import { getCurrentStoreId } from "../utils/tenantResolver"; // 🏪 MULTI-TENANT
+import {
+  createPixPayment,
+  createCardPayment,
+  checkPaymentStatus,
+  cancelPayment,
+} from "../services/paymentService";
 import type { Order, CartItem } from "../types";
 
 const BACKEND_URL = import.meta.env.VITE_API_URL || "http://localhost:3001";
@@ -58,12 +64,11 @@ const PaymentPage: React.FC = () => {
     queryKey: ["paymentStatus", activePayment?.id, activePayment?.type],
     queryFn: async () => {
       if (!activePayment) return null;
-      const endpoint = activePayment.type === "pix" ? "pix" : "payment";
-      const response = await fetchWithStoreId(
-        `${BACKEND_URL}/api/${endpoint}/status/${activePayment.id}`
+      const result = await checkPaymentStatus(
+        activePayment.id,
+        activePayment.type
       );
-      if (!response.ok) throw new Error("Erro ao verificar status");
-      return response.json();
+      return result.data;
     },
     // Só executa se tiver um pagamento ativo e não tiver finalizado ainda
     enabled: !!activePayment && status === "processing",
@@ -251,27 +256,20 @@ const PaymentPage: React.FC = () => {
     try {
       const orderId = await createOrder();
 
-      const createResp = await fetchWithStoreId(
-        `${BACKEND_URL}/api/pix/create`,
-        {
-          method: "POST",
-          body: JSON.stringify({
-            amount: cartTotal,
-            description: `Pedido de ${currentUser!.name}`,
-            orderId: orderId,
-          }),
-        }
-      );
+      const result = await createPixPayment({
+        amount: cartTotal,
+        description: `Pedido de ${currentUser!.name}`,
+        orderId: orderId,
+      });
 
-      const pixData = await createResp.json();
-      if (!pixData.paymentId || !pixData.qrCodeBase64)
+      if (!result.success || !result.paymentId || !result.qrCode)
         throw new Error("Erro ao gerar PIX");
 
-      setQrCodeBase64(pixData.qrCodeBase64);
+      setQrCodeBase64(result.qrCode);
       setPaymentStatusMessage("Escaneie o QR Code...");
 
       // Inicia Polling Automático via React Query
-      setActivePayment({ id: pixData.paymentId, type: "pix", orderId });
+      setActivePayment({ id: result.paymentId, type: "pix", orderId });
     } catch (err: any) {
       console.error(err);
       setStatus("error");
@@ -286,27 +284,20 @@ const PaymentPage: React.FC = () => {
     try {
       const orderId = await createOrder();
 
-      const createResp = await fetchWithStoreId(
-        `${BACKEND_URL}/api/payment/create`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            amount: cartTotal,
-            description: `Pedido ${currentUser!.name}`,
-            orderId: orderId,
-            paymentMethod: paymentMethod,
-          }),
-        }
-      );
+      const result = await createCardPayment({
+        amount: cartTotal,
+        description: `Pedido ${currentUser!.name}`,
+        orderId: orderId,
+        paymentMethod: paymentMethod as "credit" | "debit",
+      });
 
-      const paymentData = await createResp.json();
-      if (!paymentData.id) throw new Error("Erro na maquininha");
+      if (!result.success || !result.paymentId)
+        throw new Error("Erro na maquininha");
 
       setPaymentStatusMessage("Aguardando pagamento na maquininha...");
 
       // Inicia Polling Automático via React Query
-      setActivePayment({ id: paymentData.id, type: "card", orderId });
+      setActivePayment({ id: result.paymentId, type: "card", orderId });
     } catch (err: any) {
       console.error(err);
       setStatus("error");
@@ -328,12 +319,7 @@ const PaymentPage: React.FC = () => {
 
     if (result.isConfirmed) {
       try {
-        await fetchWithStoreId(
-          `${BACKEND_URL}/api/payment/cancel/${activePayment.id}`,
-          {
-            method: "DELETE",
-          }
-        );
+        await cancelPayment(activePayment.id);
         setActivePayment(null); // Para o polling imediatamente
         setStatus("idle");
         setQrCodeBase64(null);
