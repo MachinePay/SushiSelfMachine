@@ -1,8 +1,7 @@
 import type { Order, CartItem, Product } from "../types";
+import { getCurrentStoreId } from "../utils/tenantResolver"; // 🏪 MULTI-TENANT
 
-// Pega a URL do backend das variáveis de ambiente (ou usa localhost como padrão).
-const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:3001";
-const API_URL = `${BASE_URL}/api/ai`;
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3001";
 
 /**
  * Gera uma sugestão de compra personalizada baseada no histórico e carrinho.
@@ -43,7 +42,7 @@ export const getMenuSuggestion = async (
   }
 
   const prompt = `
-Você é o Chef do Sushi Man. Fale diretamente com ${clientName} de forma calorosa e amigável.
+Você é o Chef da Pastelaria Kiosk Pro. Fale diretamente com ${clientName} de forma calorosa e amigável.
 
 Carrinho atual: ${cartDetails || "vazio"}
 
@@ -60,9 +59,14 @@ Exemplo: "${clientName}, que tal uma Coca-Cola geladinha? Vai combinar perfeitam
   `;
 
   try {
+    const storeId = getCurrentStoreId(); // 🏪 Obtém storeId
+
     const response = await fetch(`${API_URL}/suggestion`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "x-store-id": storeId, // 🏪 Envia storeId
+      },
       body: JSON.stringify({ prompt }),
     });
 
@@ -119,7 +123,7 @@ export const getDynamicCartSuggestion = async (
   }
 
   const prompt = `
-Você é o Chef do Sushi Man falando com ${clientName}.
+Você é o Chef da pastelaria falando com ${clientName}.
 
 Carrinho: ${cartNames}
 
@@ -132,9 +136,14 @@ Exemplo: "${clientName}, que tal adicionar uma Coca geladinha? Vai combinar perf
   `;
 
   try {
+    const storeId = getCurrentStoreId(); // 🏪 Obtém storeId
+
     const response = await fetch(`${API_URL}/suggestion`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "x-store-id": storeId, // 🏪 Envia storeId
+      },
       body: JSON.stringify({ prompt }),
     });
 
@@ -178,9 +187,14 @@ Exemplo recorrente: "${clientName}, que alegria ter você aqui de novo! Preparei
   `;
 
   try {
+    const storeId = getCurrentStoreId(); // 🏪 Obtém storeId
+
     const response = await fetch(`${API_URL}/suggestion`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "x-store-id": storeId, // 🏪 Envia storeId
+      },
       body: JSON.stringify({ prompt }),
     });
 
@@ -190,7 +204,7 @@ Exemplo recorrente: "${clientName}, que alegria ter você aqui de novo! Preparei
       `Olá ${clientName}, o Chef preparou tudo com carinho para você!`
     );
   } catch (error) {
-    return `Olá ${clientName}, seja bem-vindo ao Sushi Man!`;
+    return `Olá ${clientName}, seja bem-vindo à nossa pastelaria!`;
   }
 };
 
@@ -208,9 +222,14 @@ export const sendMessageToChatbot = async (
   message: string
 ): Promise<string> => {
   try {
+    const storeId = getCurrentStoreId(); // 🏪 Obtém storeId
+
     const response = await fetch(`${API_URL}/chat`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "x-store-id": storeId, // 🏪 Envia storeId
+      },
       body: JSON.stringify({ message }),
     });
 
