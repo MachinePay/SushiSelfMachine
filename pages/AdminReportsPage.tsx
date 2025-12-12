@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import type { Order } from "../types";
 import { authenticatedFetch } from "../services/apiService";
+import { getCurrentStoreId } from "../utils/tenantResolver"; // 🏪 MULTI-TENANT
 
 interface AIRecommendation {
   topProducts: { name: string; quantity: number; revenue: number }[];
@@ -25,10 +26,18 @@ const AdminReportsPage: React.FC = () => {
 
   const fetchOrders = async () => {
     try {
+      const storeId = getCurrentStoreId();
+      console.log(`📊 [AdminReportsPage] Buscando pedidos da loja: ${storeId}`);
+
       const res = await fetch(
         `${
           import.meta.env.VITE_API_URL || "http://localhost:3001"
-        }/api/user-orders`
+        }/api/user-orders`,
+        {
+          headers: {
+            "x-store-id": storeId, // 🏪 MULTI-TENANT
+          },
+        }
       );
       if (!res.ok) throw new Error("Erro ao buscar pedidos");
       const data = await res.json();
