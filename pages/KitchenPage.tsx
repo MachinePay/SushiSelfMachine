@@ -167,13 +167,11 @@ const KitchenPage: React.FC = () => {
   const fetchOrders = useCallback(async () => {
     try {
       const storeId = getCurrentStoreId();
+      console.log(`🍳 [KitchenPage] Buscando pedidos da loja: ${storeId}`);
 
       // Busca pedidos ativos da cozinha (com autenticação)
-      const resp = await authenticatedFetch(`${BACKEND_URL}/api/orders`, {
-        headers: {
-          "x-store-id": storeId,
-        },
-      });
+      // authenticatedFetch já adiciona x-store-id automaticamente
+      const resp = await authenticatedFetch(`${BACKEND_URL}/api/orders`);
 
       if (!resp.ok) {
         throw new Error(`Erro ao buscar pedidos: ${resp.status}`);
