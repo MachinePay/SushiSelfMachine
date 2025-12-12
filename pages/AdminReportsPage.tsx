@@ -2,6 +2,21 @@ import React, { useState, useEffect } from "react";
 import type { Order } from "../types";
 import { authenticatedFetch } from "../services/apiService";
 import { getCurrentStoreId } from "../utils/tenantResolver"; // 🏪 MULTI-TENANT
+import {
+  LineChart,
+  Line,
+  PieChart,
+  Pie,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+  Cell,
+} from "recharts";
 
 interface AIRecommendation {
   topProducts: { name: string; quantity: number; revenue: number }[];
@@ -195,6 +210,72 @@ Seja direto e focado em ações práticas. Use emojis para deixar mais visual.`;
     return { topProducts, peakDays, peakHours, monthlyRevenue };
   };
 
+  // 📊 Preparar dados para gráfico de evolução diária (últimos 30 dias)
+  const prepareDailySalesData = () => {
+    const last30Days = [];
+    const salesByDay = new Map<string, number>();
+
+    // Criar últimos 30 dias
+    for (let i = 29; i >= 0; i--) {
+      const date = new Date();
+      date.setDate(date.getDate() - i);
+      const dateStr = date.toLocaleDateString("pt-BR", {
+        day: "2-digit",
+        month: "2-digit",
+      });
+      last30Days.push(dateStr);
+      salesByDay.set(dateStr, 0);
+    }
+
+    // Somar vendas por dia
+    orders.forEach((order) => {
+      const orderDate = new Date(order.timestamp);
+      const dateStr = orderDate.toLocaleDateString("pt-BR", {
+        day: "2-digit",
+        month: "2-digit",
+      });
+      if (salesByDay.has(dateStr)) {
+        salesByDay.set(dateStr, salesByDay.get(dateStr)! + order.total);
+      }
+    });
+
+    return last30Days.map((date) => ({
+      data: date,
+      faturamento: salesByDay.get(date) || 0,
+    }));
+  };
+
+  // 📊 Preparar dados para gráfico de pizza (categorias)
+  const prepareCategoryData = () => {
+    const categoryMap = new Map<string, number>();
+
+    orders.forEach((order) => {
+      order.items.forEach((item) => {
+        // Assumindo que item tem category, senão usa "Outros"
+        const category = (item as any).category || "Outros";
+        categoryMap.set(
+          category,
+          (categoryMap.get(category) || 0) + item.quantity
+        );
+      });
+    });
+
+    return Array.from(categoryMap.entries())
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 6); // Top 6 categorias
+  };
+
+  // Cores para gráficos
+  const COLORS = [
+    "#dc2626",
+    "#ef4444",
+    "#f87171",
+    "#fca5a5",
+    "#fee2e2",
+    "#991b1b",
+  ];
+
   return (
     <div className="max-w-7xl mx-auto p-6">
       <div className="mb-8">
@@ -253,6 +334,76 @@ Seja direto e focado em ações práticas. Use emojis para deixar mais visual.`;
               <p className="text-xl font-bold text-gray-900">
                 {recommendation.topProducts[0]?.name || "N/A"}
               </p>
+            </div>
+          </div>
+
+          {/* 📊 GRÁFICOS VISUAIS */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Gráfico de Linha: Evolução de Vendas */}
+            <div className="bg-white p-6 rounded-xl shadow-lg">
+              <h2 className="text-2xl font-bold text-slate-800 mb-4">
+                📈 Evolução de Vendas (Últimos 30 Dias)
+              </h2>
+              <ResponsiveContainer width="100%" height={300}>
+                <LineChart data={prepareDailySalesData()}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis
+                    dataKey="data"
+                    tick={{ fontSize: 12 }}
+                    angle={-45}
+                    textAnchor="end"
+                    height={80}
+                  />
+                  <YAxis tick={{ fontSize: 12 }} />
+                  <Tooltip
+                    formatter={(value: number) => [
+                      `R$ ${value.toFixed(2)}`,
+                      "Faturamento",
+                    ]}
+                  />
+                  <Legend />
+                  <Line
+                    type="monotone"
+                    dataKey="faturamento"
+                    stroke="#dc2626"
+                    strokeWidth={2}
+                    dot={{ fill: "#dc2626", r: 4 }}
+                    activeDot={{ r: 6 }}
+                    name="Faturamento"
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+
+            {/* Gráfico de Pizza: Categorias Mais Vendidas */}
+            <div className="bg-white p-6 rounded-xl shadow-lg">
+              <h2 className="text-2xl font-bold text-slate-800 mb-4">
+                🥧 Produtos por Categoria
+              </h2>
+              <ResponsiveContainer width="100%" height={300}>
+                <PieChart>
+                  <Pie
+                    data={prepareCategoryData()}
+                    cx="50%"
+                    cy="50%"
+                    labelLine={false}
+                    label={({ name, percent }) =>
+                      `${name} (${(percent * 100).toFixed(0)}%)`
+                    }
+                    outerRadius={100}
+                    fill="#8884d8"
+                    dataKey="value"
+                  >
+                    {prepareCategoryData().map((entry, index) => (
+                      <Cell
+                        key={`cell-${index}`}
+                        fill={COLORS[index % COLORS.length]}
+                      />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                </PieChart>
+              </ResponsiveContainer>
             </div>
           </div>
 
