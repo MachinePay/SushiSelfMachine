@@ -316,7 +316,7 @@ export interface StonePaymentResponse {
 
 /**
  * Criar pagamento com Stone Pinpad (Cartão de Crédito ou Débito)
- * Endpoint: POST /api/payment/stone/create
+ * PRODUÇÃO: Chama TEF local diretamente e depois registra no backend
  */
 export async function createStonePayment(paymentData: {
   amount: number; // Valor em centavos (100 = R$ 1,00)
@@ -325,31 +325,109 @@ export async function createStonePayment(paymentData: {
   orderId: string;
 }): Promise<StonePaymentResponse> {
   try {
-    const response = await api.post("/api/payment/stone/create", {
+    console.log(`💳 [STONE] Processando pagamento...`);
+    console.log(`   Valor: R$ ${(paymentData.amount / 100).toFixed(2)}`);
+    console.log(`   Tipo: ${paymentData.type}`);
+    console.log(`   Parcelas: ${paymentData.installments || 1}`);
+
+    // 1. Chama TEF Stone local diretamente
+    const tefResponse = await fetch(
+      "http://localhost:6800/api/v1/transactions",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          amount: paymentData.amount,
+          type: paymentData.type.toUpperCase(),
+          installments: paymentData.installments || 1,
+          installmentType: "MERCHANT",
+        }),
+        signal: AbortSignal.timeout(120000), // 2 minutos de timeout
+      }
+    );
+
+    if (!tefResponse.ok) {
+      const errorData = await tefResponse.json().catch(() => ({}));
+      throw new Error(
+        errorData.message || `TEF respondeu com status ${tefResponse.status}`
+      );
+    }
+
+    const tefData = await tefResponse.json();
+    console.log(`✅ [STONE] Resposta TEF recebida:`, tefData);
+
+    // Verifica se foi aprovado
+    const approved = tefData.responseCode === "0000";
+
+    if (!approved) {
+      console.log(
+        `❌ [STONE] Pagamento NEGADO! Código: ${tefData.responseCode}`
+      );
+      return {
+        success: false,
+        error: "Pagamento negado",
+        responseCode: tefData.responseCode,
+        responseMessage: tefData.responseMessage,
+      };
+    }
+
+    // 2. Registra transação aprovada no backend
+    console.log(`📝 [STONE] Registrando transação no backend...`);
+    const registerResponse = await api.post("/api/payment/stone/register", {
+      orderId: paymentData.orderId,
+      transactionId: tefData.transactionId,
+      authorizationCode: tefData.authorizationCode,
       amount: paymentData.amount,
       type: paymentData.type.toUpperCase(),
       installments: paymentData.installments || 1,
-      orderId: paymentData.orderId,
+      cardBrand: tefData.cardBrand,
+      cardNumber: tefData.cardNumber,
+      responseCode: tefData.responseCode,
+      responseMessage: tefData.responseMessage,
     });
 
+    console.log(`✅ [STONE] Transação registrada no backend!`);
+
     return {
-      success: response.data.success || response.data.status === "approved",
-      id: response.data.id || response.data.transactionId,
-      transactionId: response.data.transactionId,
-      responseCode: response.data.responseCode,
-      responseMessage: response.data.responseMessage,
-      authorizationCode: response.data.authorizationCode,
-      cardBrand: response.data.cardBrand,
-      cardNumber: response.data.cardNumber,
-      status: response.data.status,
+      success: true,
+      id: tefData.transactionId,
+      transactionId: tefData.transactionId,
+      responseCode: tefData.responseCode,
+      responseMessage: tefData.responseMessage,
+      authorizationCode: tefData.authorizationCode,
+      cardBrand: tefData.cardBrand,
+      cardNumber: tefData.cardNumber,
+      status: "approved",
       type: "stone",
     };
   } catch (error: any) {
     console.error("❌ Erro ao criar pagamento Stone:", error);
+
+    // Erro de conexão com TEF
+    if (error.name === "TypeError" && error.message.includes("fetch")) {
+      return {
+        success: false,
+        error: "TEF Stone não está disponível",
+        message: "Verifique se o aplicativo Stone está aberto e rodando",
+      };
+    }
+
+    // Timeout
+    if (error.name === "TimeoutError" || error.name === "AbortError") {
+      return {
+        success: false,
+        error: "Timeout na operação",
+        message: "O pagamento demorou muito tempo e foi cancelado",
+      };
+    }
+
     return {
       success: false,
       error:
-        error.response?.data?.error || "Erro ao criar pagamento Stone Pinpad",
+        error.response?.data?.error ||
+        "Erro ao processar pagamento Stone Pinpad",
       message: error.response?.data?.message || error.message,
     };
   }
@@ -357,80 +435,157 @@ export async function createStonePayment(paymentData: {
 
 /**
  * Verificar status de pagamento Stone
- * Endpoint: GET /api/payment/stone/status/:transactionId
+ * PRODUÇÃO: Consulta TEF local diretamente
  */
 export async function checkStonePaymentStatus(
   transactionId: string
 ): Promise<StonePaymentResponse> {
   try {
-    const response = await api.get(
-      `/api/payment/stone/status/${transactionId}`
+    // Consulta TEF Stone local
+    const response = await fetch(
+      `http://localhost:6800/api/v1/transactions/${transactionId}`,
+      {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        signal: AbortSignal.timeout(30000), // 30 segundos
+      }
     );
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.message || `HTTP ${response.status}`);
+    }
+
+    const data = await response.json();
+
+    // Mapeia status Stone
+    const approved = data.responseCode === "0000";
+    const status = approved ? "approved" : data.status || "pending";
 
     return {
       success: true,
-      id: response.data.id || transactionId,
-      transactionId: response.data.transactionId || transactionId,
-      responseCode: response.data.responseCode,
-      responseMessage: response.data.responseMessage,
-      status: response.data.status,
+      id: transactionId,
+      transactionId: transactionId,
+      responseCode: data.responseCode,
+      responseMessage: data.responseMessage,
+      status: status,
       type: "stone",
     };
   } catch (error: any) {
     console.error("❌ Erro ao verificar status Stone:", error);
+
+    // Erro de conexão
+    if (error.name === "TypeError" && error.message.includes("fetch")) {
+      return {
+        success: false,
+        error: "TEF Stone não está disponível",
+        message: "Não foi possível conectar ao TEF",
+      };
+    }
+
     return {
       success: false,
-      error: error.response?.data?.error || "Erro ao verificar status Stone",
-      message: error.response?.data?.message || error.message,
+      error: error.message || "Erro ao verificar status Stone",
     };
   }
 }
 
 /**
  * Cancelar pagamento Stone
- * Endpoint: POST /api/payment/stone/cancel
+ * PRODUÇÃO: Cancela no TEF local e notifica backend
  */
 export async function cancelStonePayment(
   transactionId: string
 ): Promise<StonePaymentResponse> {
   try {
-    const response = await api.post("/api/payment/stone/cancel", {
-      transactionId: transactionId,
+    console.log(`🔄 [STONE] Cancelando transação: ${transactionId}`);
+
+    // 1. Cancela no TEF Stone local
+    const cancelUrl = `http://localhost:6800/api/v1/transactions/${transactionId}/cancel`;
+    const tefResponse = await fetch(cancelUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      signal: AbortSignal.timeout(60000), // 1 minuto
     });
+
+    if (!tefResponse.ok) {
+      const errorData = await tefResponse.json().catch(() => ({}));
+      throw new Error(errorData.message || `HTTP ${tefResponse.status}`);
+    }
+
+    const tefData = await tefResponse.json();
+    console.log(`✅ [STONE] Cancelamento processado no TEF:`, tefData);
+
+    // 2. Notifica backend (opcional, mas recomendado para auditoria)
+    try {
+      await api.post("/api/payment/stone/cancel", {
+        transactionId: transactionId,
+      });
+      console.log(`✅ [STONE] Cancelamento registrado no backend`);
+    } catch (backendError) {
+      console.warn(
+        `⚠️ [STONE] Erro ao registrar cancelamento no backend:`,
+        backendError
+      );
+      // Não falha se backend não registrar, pois TEF já cancelou
+    }
 
     return {
       success: true,
       transactionId: transactionId,
-      message: response.data.message || "Transação cancelada com sucesso",
+      message: "Transação cancelada com sucesso",
     };
   } catch (error: any) {
     console.error("❌ Erro ao cancelar pagamento Stone:", error);
+
+    // Erro de conexão
+    if (error.name === "TypeError" && error.message.includes("fetch")) {
+      return {
+        success: false,
+        error: "TEF Stone não está disponível",
+        message: "Não foi possível conectar ao TEF",
+      };
+    }
+
     return {
       success: false,
-      error: error.response?.data?.error || "Erro ao cancelar pagamento Stone",
-      message: error.response?.data?.message || error.message,
+      error: error.message || "Erro ao cancelar pagamento Stone",
     };
   }
 }
 
 /**
  * Verificar saúde do TEF Stone
- * Endpoint: GET /api/payment/stone/health
+ * PRODUÇÃO: Consulta TEF local diretamente
  */
 export async function checkStoneHealth(): Promise<StonePaymentResponse> {
   try {
-    const response = await api.get("/api/payment/stone/health");
+    const response = await fetch("http://localhost:6800/health", {
+      method: "GET",
+      signal: AbortSignal.timeout(5000), // 5 segundos
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    const data = await response.json().catch(() => ({}));
 
     return {
       success: true,
-      message: response.data.message || "TEF Stone está online",
+      message: "TEF Stone está online",
     };
   } catch (error: any) {
     console.error("❌ Erro ao verificar saúde Stone:", error);
+
     return {
       success: false,
-      error: error.response?.data?.error || "TEF Stone não está disponível",
-      message: error.response?.data?.message || error.message,
+      error: "TEF Stone não está disponível",
+      message: "Verifique se o serviço está rodando em http://localhost:6800",
     };
   }
 }
