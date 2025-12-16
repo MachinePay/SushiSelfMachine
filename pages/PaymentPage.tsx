@@ -4,13 +4,12 @@ import Swal from "sweetalert2";
 import { useQuery } from "@tanstack/react-query"; // Importação Nova
 import { useCart } from "../contexts/CartContext";
 import { useAuth } from "../contexts/AuthContext";
-import { clearPaymentQueue } from "../services/pointService";
 import { getCurrentStoreId } from "../utils/tenantResolver"; // 🏪 MULTI-TENANT
 import {
   createPixPayment,
-  createCardPayment,
-  checkPaymentStatus,
-  cancelPayment,
+  createStonePayment,
+  checkStonePaymentStatus,
+  cancelStonePayment,
 } from "../services/paymentService";
 import type { Order, CartItem } from "../types";
 
@@ -64,7 +63,24 @@ const PaymentPage: React.FC = () => {
     queryKey: ["paymentStatus", activePayment?.id, activePayment?.type],
     queryFn: async () => {
       if (!activePayment) return null;
-      const result = await checkPaymentStatus(activePayment.id);
+
+      // Se for Stone, usa checkStonePaymentStatus
+      if (activePayment.type === "card") {
+        const result = await checkStonePaymentStatus(activePayment.id);
+        if (!result.success && result.error)
+          throw new Error(result.error || "Erro ao verificar status");
+        return {
+          success: true,
+          status: result.status,
+          responseCode: result.responseCode,
+          id: result.id,
+        };
+      }
+
+      // Se for PIX, usa a API normal (já implementada)
+      // Precisamos importar checkPaymentStatus para PIX
+      const apiModule = await import("../services/paymentService");
+      const result = await apiModule.checkPaymentStatus(activePayment.id);
       if (!result.success)
         throw new Error(result.error || "Erro ao verificar status");
       return result;
@@ -178,13 +194,7 @@ const PaymentPage: React.FC = () => {
         body: JSON.stringify({ paymentId, paymentStatus: "paid" }),
       });
 
-      // 2. Se for cartão, garante limpeza da fila da maquininha
-      if (type === "card") {
-        setPaymentStatusMessage("Liberando maquininha...");
-        await clearPaymentQueue();
-      }
-
-      // 3. Atualiza histórico local
+      // 2. Atualiza histórico local
       const orderData: Order = {
         id: orderId,
         userId: currentUser!.id,
@@ -203,7 +213,7 @@ const PaymentPage: React.FC = () => {
 
       addOrderToHistory(orderData);
 
-      // 4. Limpa UI e Redireciona
+      // 3. Limpa UI e Redireciona
       setActivePayment(null); // Para o polling
       setStatus("success");
       clearCart();
@@ -281,30 +291,33 @@ const PaymentPage: React.FC = () => {
 
   const handleCardPayment = async () => {
     setStatus("processing");
-    setPaymentStatusMessage("Conectando à maquininha...");
+    setPaymentStatusMessage("Conectando à Pinpad Stone...");
 
     try {
       const orderId = await createOrder();
 
-      const result = await createCardPayment({
-        amount: cartTotal,
-        description: `Pedido ${currentUser!.name}`,
+      // Converte valor para centavos (Stone trabalha em centavos)
+      const amountInCents = Math.round(cartTotal * 100);
+
+      const result = await createStonePayment({
+        amount: amountInCents,
+        type: paymentMethod === "credit" ? "CREDIT" : "DEBIT",
+        installments: paymentMethod === "credit" ? 1 : undefined,
         orderId: orderId,
-        paymentMethod: paymentMethod as "credit" | "debit",
       });
 
-      if (!result.success || !result.paymentId) {
-        throw new Error(result.error || "Erro na maquininha");
+      if (!result.success || !result.id) {
+        throw new Error(result.error || "Erro na Pinpad Stone");
       }
 
-      setPaymentStatusMessage("Aguardando pagamento na maquininha...");
+      setPaymentStatusMessage("Aguardando pagamento na Pinpad Stone...");
 
       // Inicia Polling Automático via React Query
-      setActivePayment({ id: result.paymentId, type: "card", orderId });
+      setActivePayment({ id: result.id, type: "card", orderId });
     } catch (err: any) {
       console.error(err);
       setStatus("error");
-      setErrorMessage(err.message || "Erro ao conectar maquininha.");
+      setErrorMessage(err.message || "Erro ao conectar Pinpad Stone.");
     }
   };
 
@@ -322,10 +335,21 @@ const PaymentPage: React.FC = () => {
 
     if (result.isConfirmed) {
       try {
-        const cancelResult = await cancelPayment(activePayment.id);
+        // Se for Stone, usa cancelStonePayment
+        if (activePayment.type === "card") {
+          const cancelResult = await cancelStonePayment(activePayment.id);
 
-        if (!cancelResult.success) {
-          throw new Error(cancelResult.error || "Erro ao cancelar");
+          if (!cancelResult.success) {
+            throw new Error(cancelResult.error || "Erro ao cancelar");
+          }
+        } else {
+          // Se for PIX, usa cancelamento normal
+          const apiModule = await import("../services/paymentService");
+          const cancelResult = await apiModule.cancelPayment(activePayment.id);
+
+          if (!cancelResult.success) {
+            throw new Error(cancelResult.error || "Erro ao cancelar");
+          }
         }
 
         setActivePayment(null); // Para o polling imediatamente

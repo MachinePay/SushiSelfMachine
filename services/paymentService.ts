@@ -294,3 +294,143 @@ export default {
   clearPaymentQueue,
   startPaymentPolling,
 };
+
+// ==========================================
+// --- STONE PINPAD PAYMENT ---
+// ==========================================
+
+export interface StonePaymentResponse {
+  success: boolean;
+  id?: string;
+  transactionId?: string;
+  responseCode?: string;
+  responseMessage?: string;
+  authorizationCode?: string;
+  cardBrand?: string;
+  cardNumber?: string;
+  status?: string;
+  error?: string;
+  message?: string;
+  type?: string;
+}
+
+/**
+ * Criar pagamento com Stone Pinpad (Cartão de Crédito ou Débito)
+ * Endpoint: POST /api/payment/stone/create
+ */
+export async function createStonePayment(paymentData: {
+  amount: number; // Valor em centavos (100 = R$ 1,00)
+  type: "CREDIT" | "DEBIT";
+  installments?: number;
+  orderId: string;
+}): Promise<StonePaymentResponse> {
+  try {
+    const response = await api.post("/api/payment/stone/create", {
+      amount: paymentData.amount,
+      type: paymentData.type.toUpperCase(),
+      installments: paymentData.installments || 1,
+      orderId: paymentData.orderId,
+    });
+
+    return {
+      success: response.data.success || response.data.status === "approved",
+      id: response.data.id || response.data.transactionId,
+      transactionId: response.data.transactionId,
+      responseCode: response.data.responseCode,
+      responseMessage: response.data.responseMessage,
+      authorizationCode: response.data.authorizationCode,
+      cardBrand: response.data.cardBrand,
+      cardNumber: response.data.cardNumber,
+      status: response.data.status,
+      type: "stone",
+    };
+  } catch (error: any) {
+    console.error("❌ Erro ao criar pagamento Stone:", error);
+    return {
+      success: false,
+      error:
+        error.response?.data?.error || "Erro ao criar pagamento Stone Pinpad",
+      message: error.response?.data?.message || error.message,
+    };
+  }
+}
+
+/**
+ * Verificar status de pagamento Stone
+ * Endpoint: GET /api/payment/stone/status/:transactionId
+ */
+export async function checkStonePaymentStatus(
+  transactionId: string
+): Promise<StonePaymentResponse> {
+  try {
+    const response = await api.get(
+      `/api/payment/stone/status/${transactionId}`
+    );
+
+    return {
+      success: true,
+      id: response.data.id || transactionId,
+      transactionId: response.data.transactionId || transactionId,
+      responseCode: response.data.responseCode,
+      responseMessage: response.data.responseMessage,
+      status: response.data.status,
+      type: "stone",
+    };
+  } catch (error: any) {
+    console.error("❌ Erro ao verificar status Stone:", error);
+    return {
+      success: false,
+      error: error.response?.data?.error || "Erro ao verificar status Stone",
+      message: error.response?.data?.message || error.message,
+    };
+  }
+}
+
+/**
+ * Cancelar pagamento Stone
+ * Endpoint: POST /api/payment/stone/cancel
+ */
+export async function cancelStonePayment(
+  transactionId: string
+): Promise<StonePaymentResponse> {
+  try {
+    const response = await api.post("/api/payment/stone/cancel", {
+      transactionId: transactionId,
+    });
+
+    return {
+      success: true,
+      transactionId: transactionId,
+      message: response.data.message || "Transação cancelada com sucesso",
+    };
+  } catch (error: any) {
+    console.error("❌ Erro ao cancelar pagamento Stone:", error);
+    return {
+      success: false,
+      error: error.response?.data?.error || "Erro ao cancelar pagamento Stone",
+      message: error.response?.data?.message || error.message,
+    };
+  }
+}
+
+/**
+ * Verificar saúde do TEF Stone
+ * Endpoint: GET /api/payment/stone/health
+ */
+export async function checkStoneHealth(): Promise<StonePaymentResponse> {
+  try {
+    const response = await api.get("/api/payment/stone/health");
+
+    return {
+      success: true,
+      message: response.data.message || "TEF Stone está online",
+    };
+  } catch (error: any) {
+    console.error("❌ Erro ao verificar saúde Stone:", error);
+    return {
+      success: false,
+      error: error.response?.data?.error || "TEF Stone não está disponível",
+      message: error.response?.data?.message || error.message,
+    };
+  }
+}

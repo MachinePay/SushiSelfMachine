@@ -584,8 +584,15 @@ app.post("/api/auth/login", (req, res) => {
 // ========== MIDDLEWARE MULTI-TENANCY ==========
 // Extrai e valida o storeId de cada requisição
 const extractStoreId = (req, res, next) => {
-  console.log(`🔍 [MIDDLEWARE] Rota: ${req.method} ${req.path}`);
-  console.log(`🔍 [MIDDLEWARE] Headers:`, JSON.stringify(req.headers, null, 2));
+  const requestPath = req.path;
+  const requestMethod = req.method;
+
+  console.log(`🔍 [MIDDLEWARE] ${requestMethod} ${requestPath}`);
+  console.log(`🔍 [MIDDLEWARE] x-store-id header:`, req.headers["x-store-id"]);
+  console.log(
+    `🔍 [MIDDLEWARE] Authorization header presente:`,
+    !!req.headers["authorization"]
+  );
 
   // Verifica se é uma rota que não precisa de storeId (rotas globais/públicas)
   const publicRoutes = [
@@ -607,10 +614,8 @@ const extractStoreId = (req, res, next) => {
     "/api/payment/create-pix", // Pagamentos: Criar PIX
     "/api/payment/create", // Pagamentos: Criar pagamento
     "/api/payment/clear-queue", // Pagamentos: Limpar fila
-    "/api/payment/stone/create", // Stone: Criar pagamento
-    "/api/payment/stone/cancel", // Stone: Cancelar pagamento
-    "/api/payment/stone/health", // Stone: Health check
     "/api/debug/orders", // DEBUG: Ver todos os pedidos
+    "/api/user-orders", // Histórico de pedidos do usuário
   ];
 
   // Extrai storeId SEMPRE (antes de validar qualquer coisa)
@@ -631,8 +636,9 @@ const extractStoreId = (req, res, next) => {
     /^\/api\/payment\/status\/.+$/, // /api/payment/status/:paymentId
     /^\/api\/payment\/status-pix\/.+$/, // /api/payment/status-pix/:orderId
     /^\/api\/payment\/cancel\/.+$/, // /api/payment/cancel/:paymentId
-    /^\/api\/payment\/stone\/status\/.+$/, // /api/payment/stone/status/:transactionId
     /^\/api\/users\/cpf\/.+$/, // /api/users/cpf/:cpf
+    /^\/api\/super-admin\/store\/.+\/top-products$/, // Super Admin: Top produtos
+    /^\/api\/super-admin\/store\/.+\/sales-history$/, // Super Admin: Histórico vendas
   ];
 
   if (publicRoutesPatterns.some((pattern) => pattern.test(req.path))) {
@@ -641,7 +647,8 @@ const extractStoreId = (req, res, next) => {
   }
 
   if (!storeId) {
-    console.log(`❌ [MIDDLEWARE] storeId ausente!`);
+    console.log(`❌ [MIDDLEWARE] storeId ausente para ${req.path}!`);
+    console.log(`❌ [MIDDLEWARE] Esta rota NÃO está nas listas de exceção`);
     return res.status(400).json({
       error:
         "storeId é obrigatório. Envie via header 'x-store-id' ou query param 'storeId'",
@@ -1271,8 +1278,23 @@ app.get(
   authenticateToken,
   authorizeKitchen,
   async (req, res) => {
+    console.log(`🍳 [GET /api/orders] Requisição recebida!`);
+    console.log(`🍳 [GET /api/orders] storeId: ${req.storeId}`);
+    console.log(`🍳 [GET /api/orders] user role: ${req.user?.role}`);
+
     try {
       const storeId = req.storeId;
+
+      if (!storeId) {
+        console.log(`❌ [GET /api/orders] storeId ausente no endpoint!`);
+        return res.status(400).json({
+          error: "Store ID obrigatório. Envie via header 'x-store-id'",
+          debug: {
+            headers: req.headers,
+            path: req.path,
+          },
+        });
+      }
 
       // 🔒 IMPORTANTE: Só retorna pedidos pagos e ativos (active ou preparing) DA LOJA
       let query = db("orders")
@@ -1280,11 +1302,9 @@ app.get(
         .whereIn("paymentStatus", ["paid", "authorized"])
         .orderBy("timestamp", "asc");
 
-      // Filtra por loja se storeId estiver presente
-      if (storeId) {
-        query = query.where({ store_id: storeId });
-        console.log(`🍳 Cozinha: Filtrando pedidos da loja ${storeId}`);
-      }
+      // Filtra por loja (obrigatório)
+      query = query.where({ store_id: storeId });
+      console.log(`🍳 Cozinha: Filtrando pedidos da loja ${storeId}`);
 
       const orders = await query;
 
@@ -1599,11 +1619,48 @@ app.delete(
 );
 
 app.get("/api/user-orders", async (req, res) => {
+  console.log(`🔍 [GET /api/user-orders] INÍCIO - Headers:`, {
+    "x-store-id": req.headers["x-store-id"],
+    "storeId-query": req.query.storeId,
+    "req.storeId": req.storeId,
+  });
+
   try {
     const { userId } = req.query;
-    let query = db("orders").orderBy("timestamp", "desc");
-    if (userId) query = query.where({ userId });
+    const storeId = req.storeId;
+
+    console.log(
+      `📋 [GET /api/user-orders] userId: ${userId}, storeId: ${storeId}`
+    );
+
+    if (!storeId) {
+      console.log(`❌ [GET /api/user-orders] storeId ausente!`);
+      console.log(`❌ Headers recebidos:`, req.headers);
+      return res.status(400).json({
+        error: "Store ID obrigatório. Envie via header 'x-store-id'",
+        debug: {
+          receivedHeaders: Object.keys(req.headers),
+          path: req.path,
+          method: req.method,
+        },
+      });
+    }
+
+    // Filtra por loja E por usuário (se fornecido)
+    let query = db("orders")
+      .where({ store_id: storeId })
+      .orderBy("timestamp", "desc");
+
+    if (userId) {
+      query = query.where({ userId });
+    }
+
     const allOrders = await query.select("*");
+
+    console.log(
+      `📋 [GET /api/user-orders] ${allOrders.length} pedidos encontrados na loja ${storeId}`
+    );
+
     res.json(
       allOrders.map((o) => ({
         ...o,
@@ -1612,6 +1669,7 @@ app.get("/api/user-orders", async (req, res) => {
       }))
     );
   } catch (err) {
+    console.error("❌ Erro em /api/user-orders:", err);
     res.status(500).json({ error: "Erro histórico" });
   }
 });
@@ -2174,16 +2232,22 @@ app.post("/api/webhooks/mercadopago", async (req, res) => {
 // ============================================================================
 
 // --- INTEGRAÇÃO MERCADO PAGO POINT (Orders API Unificada) - COM MULTI-TENANCY ---
+/*
+// ==========================================
+// --- ROTAS MERCADO PAGO (COMENTADAS) ---
+// ==========================================
+// Rotas comentadas temporariamente para usar Stone Pinpad
+// Para reativar Mercado Pago, descomente este bloco e comente as rotas Stone em routes/payment.js
 
 // CRIAR PAGAMENTO PIX (QR Code na tela)
-app.post("/api/payment/create-pix", async (req, res) => {
+app.post('/api/payment/create-pix', async (req, res) => {
   const { amount, description, orderId } = req.body;
   const storeId = req.storeId; // Do middleware
 
   // Busca credenciais da loja
   let MP_ACCESS_TOKEN, MP_DEVICE_ID;
   if (storeId) {
-    const store = await db("stores").where({ id: storeId }).first();
+    const store = await db('stores').where({ id: storeId }).first();
     if (store) {
       MP_ACCESS_TOKEN = store.mp_access_token;
       MP_DEVICE_ID = store.mp_device_id;
@@ -2195,12 +2259,12 @@ app.post("/api/payment/create-pix", async (req, res) => {
   if (!MP_ACCESS_TOKEN) {
     MP_ACCESS_TOKEN = process.env.MP_ACCESS_TOKEN;
     MP_DEVICE_ID = process.env.MP_DEVICE_ID;
-    console.warn("⚠️ Usando credenciais globais");
+    console.warn('⚠️ Usando credenciais globais');
   }
 
   if (!MP_ACCESS_TOKEN) {
-    console.error("Faltam credenciais do Mercado Pago");
-    return res.json({ id: `mock_pix_${Date.now()}`, status: "pending" });
+    console.error('Faltam credenciais do Mercado Pago');
+    return res.json({ id: `mock_pix_${Date.now()}`, status: 'pending' });
   }
 
   try {
@@ -2212,12 +2276,12 @@ app.post("/api/payment/create-pix", async (req, res) => {
     const paymentPayload = {
       transaction_amount: parseFloat(amount),
       description: description || `Pedido ${orderId}`,
-      payment_method_id: "pix",
+      payment_method_id: 'pix',
       external_reference: orderId,
       notification_url:
-        "https://backendkioskpro.onrender.com/api/notifications/mercadopago",
+        'https://backendkioskpro.onrender.com/api/notifications/mercadopago',
       payer: {
-        email: "cliente@kiosk.com",
+        email: 'cliente@kiosk.com',
       },
     };
 
@@ -2229,12 +2293,12 @@ app.post("/api/payment/create-pix", async (req, res) => {
     // Gera chave idempotente única para esta transação PIX
     const idempotencyKey = `pix_${orderId}_${Date.now()}`;
 
-    const response = await fetch("https://api.mercadopago.com/v1/payments", {
-      method: "POST",
+    const response = await fetch('https://api.mercadopago.com/v1/payments', {
+      method: 'POST',
       headers: {
         Authorization: `Bearer ${MP_ACCESS_TOKEN}`,
-        "Content-Type": "application/json",
-        "X-Idempotency-Key": idempotencyKey,
+        'Content-Type': 'application/json',
+        'X-Idempotency-Key': idempotencyKey,
       },
       body: JSON.stringify(paymentPayload),
     });
@@ -2247,9 +2311,9 @@ app.post("/api/payment/create-pix", async (req, res) => {
     );
 
     if (!response.ok) {
-      console.error("❌ Erro ao criar pagamento PIX:", data);
+      console.error('❌ Erro ao criar pagamento PIX:', data);
       return res.status(response.status).json({
-        error: data.message || "Erro ao criar PIX",
+        error: data.message || 'Erro ao criar PIX',
         details: data,
       });
     }
@@ -2261,12 +2325,12 @@ app.post("/api/payment/create-pix", async (req, res) => {
 
     const pixResponse = {
       id: data.id,
-      status: data.status || "pending",
+      status: data.status || 'pending',
       qr_code: data.point_of_interaction?.transaction_data?.qr_code,
       qr_code_base64:
         data.point_of_interaction?.transaction_data?.qr_code_base64,
       ticket_url: data.point_of_interaction?.transaction_data?.ticket_url,
-      type: "pix",
+      type: 'pix',
     };
 
     console.log(
@@ -2275,18 +2339,18 @@ app.post("/api/payment/create-pix", async (req, res) => {
     );
     res.json(pixResponse);
   } catch (error) {
-    console.error("Erro ao criar PIX:", error);
+    console.error('Erro ao criar PIX:', error);
     res.status(500).json({ error: error.message });
   }
 });
 
 // Endpoint legado para compatibilidade - redireciona para create-card
-app.post("/api/payment/create", async (req, res) => {
+app.post('/api/payment/create', async (req, res) => {
   console.log(
-    "⚠️ Endpoint legado /api/payment/create chamado - redirecionando para /create-card"
+    '⚠️ Endpoint legado /api/payment/create chamado - redirecionando para /create-card'
   );
   // Encaminha a requisição para o handler correto
-  req.url = "/api/payment/create-card";
+  req.url = '/api/payment/create-card';
   return app._router.handle(req, res);
 });
 
@@ -2294,42 +2358,42 @@ app.post("/api/payment/create", async (req, res) => {
 // --- ROTAS EXCLUSIVAS PIX (QR Code na Tela) ---
 // ==========================================
 
-app.post("/api/pix/create", async (req, res) => {
+app.post('/api/pix/create', async (req, res) => {
   const { amount, description, email, payerName, orderId } = req.body;
 
-  if (!MP_ACCESS_TOKEN) return res.status(500).json({ error: "Sem token MP" });
+  if (!MP_ACCESS_TOKEN) return res.status(500).json({ error: 'Sem token MP' });
 
   try {
     console.log(`💠 Gerando PIX QR Code de R$ ${amount}...`);
 
     const idempotencyKey = `pix_${orderId || Date.now()}_${Date.now()}`;
 
-    const response = await fetch("https://api.mercadopago.com/v1/payments", {
-      method: "POST",
+    const response = await fetch('https://api.mercadopago.com/v1/payments', {
+      method: 'POST',
       headers: {
         Authorization: `Bearer ${MP_ACCESS_TOKEN}`,
-        "Content-Type": "application/json",
-        "X-Idempotency-Key": idempotencyKey,
+        'Content-Type': 'application/json',
+        'X-Idempotency-Key': idempotencyKey,
       },
       body: JSON.stringify({
         transaction_amount: parseFloat(amount),
-        description: description || "Pedido Kiosk",
-        payment_method_id: "pix",
+        description: description || 'Pedido Kiosk',
+        payment_method_id: 'pix',
         payer: {
-          email: email || "cliente@kiosk.com",
-          first_name: payerName || "Cliente",
+          email: email || 'cliente@kiosk.com',
+          first_name: payerName || 'Cliente',
         },
         external_reference: orderId,
         notification_url:
-          "https://backendkioskpro.onrender.com/api/notifications/mercadopago",
+          'https://backendkioskpro.onrender.com/api/notifications/mercadopago',
       }),
     });
 
     const data = await response.json();
 
     if (!response.ok) {
-      console.error("❌ Erro ao gerar PIX:", data);
-      throw new Error(data.message || "Erro ao gerar PIX");
+      console.error('❌ Erro ao gerar PIX:', data);
+      throw new Error(data.message || 'Erro ao gerar PIX');
     }
 
     const qrCodeBase64 =
@@ -2344,19 +2408,19 @@ app.post("/api/pix/create", async (req, res) => {
       paymentId,
       qrCodeBase64,
       qrCodeCopyPaste,
-      status: "pending",
-      type: "pix",
+      status: 'pending',
+      type: 'pix',
     });
   } catch (error) {
-    console.error("❌ Erro ao criar PIX:", error);
-    res.status(500).json({ error: error.message || "Falha ao gerar PIX" });
+    console.error('❌ Erro ao criar PIX:', error);
+    res.status(500).json({ error: error.message || 'Falha ao gerar PIX' });
   }
 });
 
-app.get("/api/pix/status/:id", async (req, res) => {
+app.get('/api/pix/status/:id', async (req, res) => {
   const { id } = req.params;
 
-  if (!MP_ACCESS_TOKEN) return res.status(500).json({ error: "Sem token" });
+  if (!MP_ACCESS_TOKEN) return res.status(500).json({ error: 'Sem token' });
 
   try {
     console.log(`💠 Verificando status PIX: ${id}`);
@@ -2372,28 +2436,28 @@ app.get("/api/pix/status/:id", async (req, res) => {
 
     console.log(`💠 Status PIX (${id}): ${data.status}`);
 
-    if (data.status === "approved") {
-      return res.json({ status: "approved", paymentId: id });
+    if (data.status === 'approved') {
+      return res.json({ status: 'approved', paymentId: id });
     }
 
-    res.json({ status: data.status || "pending" });
+    res.json({ status: data.status || 'pending' });
   } catch (error) {
-    console.error("❌ Erro ao verificar PIX:", error);
-    res.json({ status: "pending" });
+    console.error('❌ Erro ao verificar PIX:', error);
+    res.json({ status: 'pending' });
   }
 });
 
 // ==========================================
 
 // CRIAR PAGAMENTO NA MAQUININHA (Point Integration API - volta ao original)
-app.post("/api/payment/create-card", async (req, res) => {
+app.post('/api/payment/create-card', async (req, res) => {
   const { amount, description, orderId, paymentMethod } = req.body;
   const storeId = req.storeId; // Do middleware
 
   // Busca credenciais da loja
   let MP_ACCESS_TOKEN, MP_DEVICE_ID;
   if (storeId) {
-    const store = await db("stores").where({ id: storeId }).first();
+    const store = await db('stores').where({ id: storeId }).first();
     if (store) {
       MP_ACCESS_TOKEN = store.mp_access_token;
       MP_DEVICE_ID = store.mp_device_id;
@@ -2405,11 +2469,11 @@ app.post("/api/payment/create-card", async (req, res) => {
   if (!MP_ACCESS_TOKEN) {
     MP_ACCESS_TOKEN = process.env.MP_ACCESS_TOKEN;
     MP_DEVICE_ID = process.env.MP_DEVICE_ID;
-    console.warn("⚠️ Usando credenciais globais");
+    console.warn('⚠️ Usando credenciais globais');
   }
 
   // ✅ DETECÇÃO AUTOMÁTICA: Se for PIX, gera QR Code (Payments API) - NÃO DEVERIA CHEGAR AQUI
-  if (paymentMethod === "pix") {
+  if (paymentMethod === 'pix') {
     console.log(`🔀 PIX detectado - gerando QR Code (Payments API)`);
 
     try {
@@ -2419,25 +2483,25 @@ app.post("/api/payment/create-card", async (req, res) => {
       const pixPayload = {
         transaction_amount: parseFloat(amount),
         description: description || `Pedido ${orderId}`,
-        payment_method_id: "pix",
+        payment_method_id: 'pix',
         payer: {
-          email: "cliente@totem.com.br",
-          first_name: "Cliente",
-          last_name: "Totem",
+          email: 'cliente@totem.com.br',
+          first_name: 'Cliente',
+          last_name: 'Totem',
         },
         external_reference: orderId,
         notification_url:
-          "https://backendkioskpro.onrender.com/api/notifications/mercadopago",
+          'https://backendkioskpro.onrender.com/api/notifications/mercadopago',
       };
 
       console.log(`📤 Payload PIX:`, JSON.stringify(pixPayload, null, 2));
 
-      const response = await fetch("https://api.mercadopago.com/v1/payments", {
-        method: "POST",
+      const response = await fetch('https://api.mercadopago.com/v1/payments', {
+        method: 'POST',
         headers: {
           Authorization: `Bearer ${MP_ACCESS_TOKEN}`,
-          "Content-Type": "application/json",
-          "X-Idempotency-Key": idempotencyKey,
+          'Content-Type': 'application/json',
+          'X-Idempotency-Key': idempotencyKey,
         },
         body: JSON.stringify(pixPayload),
       });
@@ -2445,8 +2509,8 @@ app.post("/api/payment/create-card", async (req, res) => {
       const data = await response.json();
 
       if (!response.ok) {
-        console.error("❌ Erro ao criar PIX:", data);
-        throw new Error(data.message || "Erro ao criar PIX");
+        console.error('❌ Erro ao criar PIX:', data);
+        throw new Error(data.message || 'Erro ao criar PIX');
       }
 
       console.log(`✅ PIX QR Code criado! Payment ID: ${data.id}`);
@@ -2462,23 +2526,23 @@ app.post("/api/payment/create-card", async (req, res) => {
         qr_code_base64:
           data.point_of_interaction?.transaction_data?.qr_code_base64,
         ticket_url: data.point_of_interaction?.transaction_data?.ticket_url,
-        type: "pix",
+        type: 'pix',
       });
     } catch (error) {
-      console.error("❌ Erro ao criar PIX:", error);
+      console.error('❌ Erro ao criar PIX:', error);
       return res.status(500).json({ error: error.message });
     }
   }
 
   // ✅ CARTÕES: Segue para maquininha
   if (!MP_ACCESS_TOKEN || !MP_DEVICE_ID) {
-    console.error("Faltam credenciais do Mercado Pago");
-    return res.json({ id: `mock_pay_${Date.now()}`, status: "pending" });
+    console.error('Faltam credenciais do Mercado Pago');
+    return res.json({ id: `mock_pay_${Date.now()}`, status: 'pending' });
   }
 
   try {
     console.log(`💳 Criando payment intent na Point ${MP_DEVICE_ID}...`);
-    console.log(`💰 Método solicitado: ${paymentMethod || "todos"}`);
+    console.log(`💰 Método solicitado: ${paymentMethod || 'todos'}`);
 
     // Payload simplificado para Point Integration API
     const payload = {
@@ -2493,8 +2557,8 @@ app.post("/api/payment/create-card", async (req, res) => {
     // Se método especificado (crédito/débito), adiciona filtro
     if (paymentMethod) {
       const paymentTypeMap = {
-        debit: "debit_card",
-        credit: "credit_card",
+        debit: 'debit_card',
+        credit: 'credit_card',
       };
 
       const type = paymentTypeMap[paymentMethod];
@@ -2502,8 +2566,8 @@ app.post("/api/payment/create-card", async (req, res) => {
       if (type) {
         payload.payment = {
           type: type,
-          installments: paymentMethod === "credit" ? 1 : undefined,
-          installments_cost: paymentMethod === "credit" ? "buyer" : undefined,
+          installments: paymentMethod === 'credit' ? 1 : undefined,
+          installments_cost: paymentMethod === 'credit' ? 'buyer' : undefined,
         };
         console.log(`🎯 Filtro ativo: ${type}`);
       }
@@ -2516,10 +2580,10 @@ app.post("/api/payment/create-card", async (req, res) => {
 
     const url = `https://api.mercadopago.com/point/integration-api/devices/${MP_DEVICE_ID}/payment-intents`;
     const response = await fetch(url, {
-      method: "POST",
+      method: 'POST',
       headers: {
         Authorization: `Bearer ${MP_ACCESS_TOKEN}`,
-        "Content-Type": "application/json",
+        'Content-Type': 'application/json',
       },
       body: JSON.stringify(payload),
     });
@@ -2528,7 +2592,7 @@ app.post("/api/payment/create-card", async (req, res) => {
 
     if (!response.ok) {
       console.error(
-        "❌ Erro ao criar payment intent:",
+        '❌ Erro ao criar payment intent:',
         JSON.stringify(data, null, 2)
       );
       console.error(`📡 Status HTTP: ${response.status}`);
@@ -2540,24 +2604,24 @@ app.post("/api/payment/create-card", async (req, res) => {
 
     res.json({
       id: data.id,
-      status: "open",
-      type: "point",
+      status: 'open',
+      type: 'point',
     });
   } catch (error) {
-    console.error("❌ Erro Pagamento Point:", error);
-    console.error("❌ Stack trace:", error.stack);
+    console.error('❌ Erro Pagamento Point:', error);
+    console.error('❌ Stack trace:', error.stack);
     res
       .status(500)
-      .json({ error: error.message || "Falha ao comunicar com maquininha" });
+      .json({ error: error.message || 'Falha ao comunicar com maquininha' });
   }
 });
 
 // Verificar status PAGAMENTO (híbrido: Order PIX ou Payment Intent Point)
-app.get("/api/payment/status/:paymentId", async (req, res) => {
+app.get('/api/payment/status/:paymentId', async (req, res) => {
   const { paymentId } = req.params;
   const storeId = req.storeId; // Do middleware
 
-  if (paymentId.startsWith("mock_")) return res.json({ status: "approved" });
+  if (paymentId.startsWith('mock_')) return res.json({ status: 'approved' });
 
   try {
     console.log(
@@ -2567,7 +2631,7 @@ app.get("/api/payment/status/:paymentId", async (req, res) => {
     // Busca credenciais da loja
     let storeConfig;
     if (storeId) {
-      const store = await db("stores").where({ id: storeId }).first();
+      const store = await db('stores').where({ id: storeId }).first();
       if (store) {
         storeConfig = {
           mp_access_token: store.mp_access_token,
@@ -2589,7 +2653,7 @@ app.get("/api/payment/status/:paymentId", async (req, res) => {
     }
 
     if (!storeConfig.mp_access_token) {
-      return res.status(500).json({ error: "Credenciais MP não configuradas" });
+      return res.status(500).json({ error: 'Credenciais MP não configuradas' });
     }
 
     // 1. Tenta buscar como Payment Intent (Point Integration API)
@@ -2620,8 +2684,8 @@ app.get("/api/payment/status/:paymentId", async (req, res) => {
             console.log(`💳 Pagamento real status: ${paymentDetails.status}`);
 
             if (
-              paymentDetails.status === "approved" ||
-              paymentDetails.status === "authorized"
+              paymentDetails.status === 'approved' ||
+              paymentDetails.status === 'authorized'
             ) {
               console.log(`✅ PAGAMENTO CONFIRMADO COMO APROVADO!`);
 
@@ -2634,7 +2698,7 @@ app.get("/api/payment/status/:paymentId", async (req, res) => {
               }
 
               return res.json({
-                status: "approved",
+                status: 'approved',
                 paymentId: realPaymentId,
                 paymentStatus: paymentDetails.status,
               });
@@ -2642,9 +2706,9 @@ app.get("/api/payment/status/:paymentId", async (req, res) => {
 
             // Verifica se foi rejeitado/cancelado
             if (
-              paymentDetails.status === "rejected" ||
-              paymentDetails.status === "cancelled" ||
-              paymentDetails.status === "refunded"
+              paymentDetails.status === 'rejected' ||
+              paymentDetails.status === 'cancelled' ||
+              paymentDetails.status === 'refunded'
             ) {
               console.log(
                 `❌ PAGAMENTO REJEITADO/CANCELADO: ${paymentDetails.status}`
@@ -2662,10 +2726,10 @@ app.get("/api/payment/status/:paymentId", async (req, res) => {
               const orderId = intent.additional_info?.external_reference;
 
               return res.json({
-                status: "rejected",
+                status: 'rejected',
                 paymentId: realPaymentId,
                 paymentStatus: paymentDetails.status,
-                reason: "rejected_by_terminal",
+                reason: 'rejected_by_terminal',
                 orderId: orderId || null,
               });
             }
@@ -2673,7 +2737,7 @@ app.get("/api/payment/status/:paymentId", async (req, res) => {
             // Outros status (pending, in_process, etc)
             console.log(`⏳ PAGAMENTO PENDENTE: ${paymentDetails.status}`);
             return res.json({
-              status: "pending",
+              status: 'pending',
               paymentId: realPaymentId,
               paymentStatus: paymentDetails.status,
             });
@@ -2686,12 +2750,12 @@ app.get("/api/payment/status/:paymentId", async (req, res) => {
         console.log(
           `⚠️ Fallback: não foi possível confirmar status do pagamento ${realPaymentId}`
         );
-        return res.json({ status: "pending", paymentId: realPaymentId });
+        return res.json({ status: 'pending', paymentId: realPaymentId });
       }
 
       // Estados finalizados - NÃO assume approved automaticamente!
       // FINISHED pode ser rejected, cancelled, refunded, etc
-      if (intent.state === "FINISHED") {
+      if (intent.state === 'FINISHED') {
         console.log(
           `⚠️ Intent FINISHED mas sem payment.id - precisa verificar manualmente`
         );
@@ -2720,24 +2784,24 @@ app.get("/api/payment/status/:paymentId", async (req, res) => {
                 );
 
                 if (
-                  payment.status === "approved" ||
-                  payment.status === "authorized"
+                  payment.status === 'approved' ||
+                  payment.status === 'authorized'
                 ) {
                   return res.json({
-                    status: "approved",
+                    status: 'approved',
                     paymentId: payment.id,
                   });
                 } else if (
-                  payment.status === "rejected" ||
-                  payment.status === "cancelled" ||
-                  payment.status === "refunded"
+                  payment.status === 'rejected' ||
+                  payment.status === 'cancelled' ||
+                  payment.status === 'refunded'
                 ) {
                   return res.json({
-                    status: "rejected",
+                    status: 'rejected',
                     paymentId: payment.id,
                   });
                 } else {
-                  return res.json({ status: "pending", paymentId: payment.id });
+                  return res.json({ status: 'pending', paymentId: payment.id });
                 }
               }
             }
@@ -2752,18 +2816,18 @@ app.get("/api/payment/status/:paymentId", async (req, res) => {
         console.log(
           `⚠️ Intent FINISHED mas status do pagamento desconhecido - retornando pending`
         );
-        return res.json({ status: "pending", paymentId: paymentId });
+        return res.json({ status: 'pending', paymentId: paymentId });
       }
 
-      if (intent.state === "CANCELED" || intent.state === "ERROR") {
-        const isCanceled = intent.state === "CANCELED";
-        const isError = intent.state === "ERROR";
+      if (intent.state === 'CANCELED' || intent.state === 'ERROR') {
+        const isCanceled = intent.state === 'CANCELED';
+        const isError = intent.state === 'ERROR';
 
         console.log(
           `❌ Intent ${intent.state}${
             isCanceled
-              ? " (cancelado pelo usuário na maquininha)"
-              : " (erro no processamento)"
+              ? ' (cancelado pelo usuário na maquininha)'
+              : ' (erro no processamento)'
           }`
         );
 
@@ -2780,14 +2844,14 @@ app.get("/api/payment/status/:paymentId", async (req, res) => {
         if (orderId) {
           console.log(`  -> Pedido associado: ${orderId}. Cancelando...`);
           try {
-            const order = await db("orders").where({ id: orderId }).first();
+            const order = await db('orders').where({ id: orderId }).first();
 
             // Apenas cancela se o pedido ainda estiver pendente
-            if (order && order.paymentStatus === "pending") {
+            if (order && order.paymentStatus === 'pending') {
               // 1. Libera o estoque reservado
               const items = parseJSON(order.items);
               for (const item of items) {
-                const product = await db("products")
+                const product = await db('products')
                   .where({ id: item.id })
                   .first();
                 if (
@@ -2799,7 +2863,7 @@ app.get("/api/payment/status/:paymentId", async (req, res) => {
                     0,
                     product.stock_reserved - item.quantity
                   );
-                  await db("products")
+                  await db('products')
                     .where({ id: item.id })
                     .update({ stock_reserved: newReserved });
                   console.log(
@@ -2809,9 +2873,9 @@ app.get("/api/payment/status/:paymentId", async (req, res) => {
               }
 
               // 2. Atualiza o status do pedido para 'canceled'
-              await db("orders")
+              await db('orders')
                 .where({ id: orderId })
-                .update({ paymentStatus: "canceled", status: "canceled" });
+                .update({ paymentStatus: 'canceled', status: 'canceled' });
 
               console.log(
                 `  ✅ Pedido ${orderId} e estoque atualizados com sucesso!`
@@ -2831,18 +2895,18 @@ app.get("/api/payment/status/:paymentId", async (req, res) => {
         // --- FIM DA LÓGICA ---
 
         return res.json({
-          status: "canceled",
-          reason: isCanceled ? "canceled_by_user" : "payment_error",
+          status: 'canceled',
+          reason: isCanceled ? 'canceled_by_user' : 'payment_error',
           orderId: orderId || null,
           message: isCanceled
-            ? "Pagamento cancelado na maquininha pelo usuário"
-            : "Erro ao processar pagamento na maquininha",
+            ? 'Pagamento cancelado na maquininha pelo usuário'
+            : 'Erro ao processar pagamento na maquininha',
         });
       }
 
       // Ainda pendente
       console.log(`⏳ Intent pendente (${intent.state})`);
-      return res.json({ status: "pending" });
+      return res.json({ status: 'pending' });
     }
 
     // 2. Se não é Payment Intent, tenta como Payment PIX
@@ -2856,40 +2920,40 @@ app.get("/api/payment/status/:paymentId", async (req, res) => {
       const payment = await paymentResponse.json();
       console.log(`💚 Payment ${paymentId} | Status: ${payment.status}`);
 
-      if (payment.status === "approved") {
+      if (payment.status === 'approved') {
         console.log(`✅ Payment PIX APROVADO!`);
-        return res.json({ status: "approved", paymentId: payment.id });
+        return res.json({ status: 'approved', paymentId: payment.id });
       } else if (
-        payment.status === "cancelled" ||
-        payment.status === "rejected"
+        payment.status === 'cancelled' ||
+        payment.status === 'rejected'
       ) {
         console.log(`❌ Payment ${payment.status.toUpperCase()}`);
         return res.json({
-          status: "canceled",
-          reason: "canceled_by_system",
+          status: 'canceled',
+          reason: 'canceled_by_system',
           paymentStatus: payment.status,
           message:
-            payment.status === "cancelled"
-              ? "Pagamento PIX cancelado"
-              : "Pagamento PIX rejeitado",
+            payment.status === 'cancelled'
+              ? 'Pagamento PIX cancelado'
+              : 'Pagamento PIX rejeitado',
         });
       }
 
       console.log(`⏳ Payment ainda pendente (${payment.status})`);
-      return res.json({ status: "pending" });
+      return res.json({ status: 'pending' });
     }
 
     // 3. Não encontrado em nenhum lugar
     console.log(`⚠️ Pagamento ${paymentId} não encontrado`);
-    res.json({ status: "pending" });
+    res.json({ status: 'pending' });
   } catch (error) {
-    console.error("❌ Erro ao verificar status:", error.message);
-    res.json({ status: "pending" });
+    console.error('❌ Erro ao verificar status:', error.message);
+    res.json({ status: 'pending' });
   }
 });
 
 // ENDPOINT LEGADO (para compatibilidade temporária com antigo sistema)
-app.get("/api/payment/status-pix/:orderId", async (req, res) => {
+app.get('/api/payment/status-pix/:orderId', async (req, res) => {
   console.log(
     `⚠️ Endpoint legado /status-pix chamado - redirecionando para /status`
   );
@@ -2901,14 +2965,14 @@ app.get("/api/payment/status-pix/:orderId", async (req, res) => {
 // ==========================================
 
 // Cancelar pagamento específico (Point Intent ou PIX Payment)
-app.delete("/api/payment/cancel/:paymentId", async (req, res) => {
+app.delete('/api/payment/cancel/:paymentId', async (req, res) => {
   const { paymentId } = req.params;
   const storeId = req.storeId;
 
   // Busca credenciais da loja
   let MP_ACCESS_TOKEN_LOCAL, MP_DEVICE_ID_LOCAL;
   if (storeId) {
-    const store = await db("stores").where({ id: storeId }).first();
+    const store = await db('stores').where({ id: storeId }).first();
     if (store) {
       MP_ACCESS_TOKEN_LOCAL = store.mp_access_token;
       MP_DEVICE_ID_LOCAL = store.mp_device_id;
@@ -2923,7 +2987,7 @@ app.delete("/api/payment/cancel/:paymentId", async (req, res) => {
   }
 
   if (!MP_ACCESS_TOKEN_LOCAL) {
-    return res.json({ success: true, message: "Mock cancelado" });
+    return res.json({ success: true, message: 'Mock cancelado' });
   }
 
   try {
@@ -2935,7 +2999,7 @@ app.delete("/api/payment/cancel/:paymentId", async (req, res) => {
 
       console.log(`  -> Enviando DELETE para a maquininha: ${urlIntent}`);
       const intentResponse = await fetch(urlIntent, {
-        method: "DELETE",
+        method: 'DELETE',
         headers: { Authorization: `Bearer ${MP_ACCESS_TOKEN_LOCAL}` },
       });
 
@@ -2946,7 +3010,7 @@ app.delete("/api/payment/cancel/:paymentId", async (req, res) => {
         );
         return res.json({
           success: true,
-          message: "Pagamento na maquininha cancelado.",
+          message: 'Pagamento na maquininha cancelado.',
         });
       }
       // Se a API retornar 409, significa que o pagamento está sendo processado e não pode ser cancelado.
@@ -2956,7 +3020,7 @@ app.delete("/api/payment/cancel/:paymentId", async (req, res) => {
         );
         return res.status(409).json({
           success: false,
-          message: "Pagamento em processamento, não pode ser cancelado.",
+          message: 'Pagamento em processamento, não pode ser cancelado.',
         });
       }
     }
@@ -2965,39 +3029,39 @@ app.delete("/api/payment/cancel/:paymentId", async (req, res) => {
     console.log(`  -> Tentando cancelar como Payment PIX...`);
     const urlPayment = `https://api.mercadopago.com/v1/payments/${paymentId}`;
     const response = await fetch(urlPayment, {
-      method: "PUT",
+      method: 'PUT',
       headers: {
         Authorization: `Bearer ${MP_ACCESS_TOKEN_LOCAL}`,
-        "Content-Type": "application/json",
+        'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ status: "cancelled" }),
+      body: JSON.stringify({ status: 'cancelled' }),
     });
 
     if (response.ok) {
       console.log(`✅ Payment PIX ${paymentId} cancelado`);
-      return res.json({ success: true, message: "PIX cancelado" });
+      return res.json({ success: true, message: 'PIX cancelado' });
     }
 
     // Se chegou aqui, não conseguiu cancelar
     console.log(`⚠️ Não foi possível cancelar ${paymentId} como PIX ou Point.`);
     return res.json({
       success: false,
-      message: "Não foi possível cancelar - pode já estar finalizado",
+      message: 'Não foi possível cancelar - pode já estar finalizado',
     });
   } catch (error) {
-    console.error("❌ Erro ao cancelar pagamento:", error.message);
+    console.error('❌ Erro ao cancelar pagamento:', error.message);
     res.status(500).json({ success: false, error: error.message });
   }
 });
 
 // Limpar TODA a fila da maquininha (útil para logout/sair)
-app.post("/api/payment/clear-all", async (req, res) => {
+app.post('/api/payment/clear-all', async (req, res) => {
   const storeId = req.storeId;
 
   // Busca credenciais da loja
   let MP_ACCESS_TOKEN_LOCAL, MP_DEVICE_ID_LOCAL;
   if (storeId) {
-    const store = await db("stores").where({ id: storeId }).first();
+    const store = await db('stores').where({ id: storeId }).first();
     if (store) {
       MP_ACCESS_TOKEN_LOCAL = store.mp_access_token;
       MP_DEVICE_ID_LOCAL = store.mp_device_id;
@@ -3024,7 +3088,7 @@ app.post("/api/payment/clear-all", async (req, res) => {
     });
 
     if (!listResp.ok) {
-      return res.json({ success: false, error: "Erro ao listar intents" });
+      return res.json({ success: false, error: 'Erro ao listar intents' });
     }
 
     const listData = await listResp.json();
@@ -3039,7 +3103,7 @@ app.post("/api/payment/clear-all", async (req, res) => {
 
       try {
         const delResp = await fetch(`${listUrl}/${iId}`, {
-          method: "DELETE",
+          method: 'DELETE',
           headers: { Authorization: `Bearer ${MP_ACCESS_TOKEN_LOCAL}` },
         });
 
@@ -3065,19 +3129,19 @@ app.post("/api/payment/clear-all", async (req, res) => {
       message: `${cleared} pagamento(s) removido(s) da fila`,
     });
   } catch (error) {
-    console.error("❌ Erro ao limpar fila:", error.message);
+    console.error('❌ Erro ao limpar fila:', error.message);
     res.status(500).json({ success: false, error: error.message });
   }
 });
 
 // Configurar Point Smart 2 (modo operacional e vinculação)
-app.post("/api/point/configure", async (req, res) => {
+app.post('/api/point/configure', async (req, res) => {
   const storeId = req.storeId;
 
   // Busca credenciais da loja
   let MP_ACCESS_TOKEN_LOCAL, MP_DEVICE_ID_LOCAL;
   if (storeId) {
-    const store = await db("stores").where({ id: storeId }).first();
+    const store = await db('stores').where({ id: storeId }).first();
     if (store) {
       MP_ACCESS_TOKEN_LOCAL = store.mp_access_token;
       MP_DEVICE_ID_LOCAL = store.mp_device_id;
@@ -3092,7 +3156,7 @@ app.post("/api/point/configure", async (req, res) => {
   }
 
   if (!MP_ACCESS_TOKEN_LOCAL || !MP_DEVICE_ID_LOCAL) {
-    return res.json({ success: false, error: "Credenciais não configuradas" });
+    return res.json({ success: false, error: 'Credenciais não configuradas' });
   }
 
   try {
@@ -3102,15 +3166,15 @@ app.post("/api/point/configure", async (req, res) => {
     const configUrl = `https://api.mercadopago.com/point/integration-api/devices/${MP_DEVICE_ID_LOCAL}`;
 
     const configPayload = {
-      operating_mode: "PDV", // Modo PDV - integração com frente de caixa
+      operating_mode: 'PDV', // Modo PDV - integração com frente de caixa
       // Isso mantém a Point vinculada e bloqueia acesso ao menu
     };
 
     const response = await fetch(configUrl, {
-      method: "PATCH",
+      method: 'PATCH',
       headers: {
         Authorization: `Bearer ${MP_ACCESS_TOKEN_LOCAL}`,
-        "Content-Type": "application/json",
+        'Content-Type': 'application/json',
       },
       body: JSON.stringify(configPayload),
     });
@@ -3122,8 +3186,8 @@ app.post("/api/point/configure", async (req, res) => {
 
       return res.json({
         success: true,
-        message: "Point configurada com sucesso",
-        mode: "PDV",
+        message: 'Point configurada com sucesso',
+        mode: 'PDV',
         device: data,
       });
     } else {
@@ -3132,19 +3196,19 @@ app.post("/api/point/configure", async (req, res) => {
       return res.status(400).json({ success: false, error: error.message });
     }
   } catch (error) {
-    console.error("❌ Erro ao configurar Point Smart 2:", error.message);
+    console.error('❌ Erro ao configurar Point Smart 2:', error.message);
     res.status(500).json({ success: false, error: error.message });
   }
 });
 
 // Verificar status da Point Smart 2
-app.get("/api/point/status", async (req, res) => {
+app.get('/api/point/status', async (req, res) => {
   const storeId = req.storeId;
 
   // Busca credenciais da loja
   let MP_ACCESS_TOKEN_LOCAL, MP_DEVICE_ID_LOCAL;
   if (storeId) {
-    const store = await db("stores").where({ id: storeId }).first();
+    const store = await db('stores').where({ id: storeId }).first();
     if (store) {
       MP_ACCESS_TOKEN_LOCAL = store.mp_access_token;
       MP_DEVICE_ID_LOCAL = store.mp_device_id;
@@ -3159,14 +3223,14 @@ app.get("/api/point/status", async (req, res) => {
   }
 
   if (!MP_ACCESS_TOKEN_LOCAL || !MP_DEVICE_ID_LOCAL) {
-    console.error("⚠️ Status Point: Credenciais não configuradas");
+    console.error('⚠️ Status Point: Credenciais não configuradas');
     console.error(
-      `MP_ACCESS_TOKEN: ${MP_ACCESS_TOKEN_LOCAL ? "OK" : "AUSENTE"}`
+      `MP_ACCESS_TOKEN: ${MP_ACCESS_TOKEN_LOCAL ? 'OK' : 'AUSENTE'}`
     );
-    console.error(`MP_DEVICE_ID: ${MP_DEVICE_ID_LOCAL || "AUSENTE"}`);
+    console.error(`MP_DEVICE_ID: ${MP_DEVICE_ID_LOCAL || 'AUSENTE'}`);
     return res.json({
       connected: false,
-      error: "Credenciais não configuradas",
+      error: 'Credenciais não configuradas',
     });
   }
 
@@ -3189,31 +3253,31 @@ app.get("/api/point/status", async (req, res) => {
         id: device.id,
         operating_mode: device.operating_mode,
         status: device.status,
-        model: device.model || "Point Smart 2",
+        model: device.model || 'Point Smart 2',
       });
     } else {
       const errorData = await response.json();
       console.error(`❌ Erro ao buscar Point:`, errorData);
       return res.json({
         connected: false,
-        error: "Point não encontrada",
+        error: 'Point não encontrada',
         details: errorData,
       });
     }
   } catch (error) {
-    console.error("❌ Exceção ao verificar Point:", error);
+    console.error('❌ Exceção ao verificar Point:', error);
     res.status(500).json({ connected: false, error: error.message });
   }
 });
 
 // Limpar TODA a fila de pagamentos da maquininha (chamar após pagamento aprovado)
-app.post("/api/payment/clear-queue", async (req, res) => {
+app.post('/api/payment/clear-queue', async (req, res) => {
   const storeId = req.storeId;
 
   // Busca credenciais da loja
   let MP_ACCESS_TOKEN_LOCAL, MP_DEVICE_ID_LOCAL;
   if (storeId) {
-    const store = await db("stores").where({ id: storeId }).first();
+    const store = await db('stores').where({ id: storeId }).first();
     if (store) {
       MP_ACCESS_TOKEN_LOCAL = store.mp_access_token;
       MP_DEVICE_ID_LOCAL = store.mp_device_id;
@@ -3240,7 +3304,7 @@ app.post("/api/payment/clear-queue", async (req, res) => {
     });
 
     if (!listResp.ok) {
-      return res.json({ success: false, error: "Erro ao listar intents" });
+      return res.json({ success: false, error: 'Erro ao listar intents' });
     }
 
     const listData = await listResp.json();
@@ -3256,7 +3320,7 @@ app.post("/api/payment/clear-queue", async (req, res) => {
 
       try {
         const delResp = await fetch(`${listUrl}/${iId}`, {
-          method: "DELETE",
+          method: 'DELETE',
           headers: { Authorization: `Bearer ${MP_ACCESS_TOKEN_LOCAL}` },
         });
 
@@ -3282,280 +3346,15 @@ app.post("/api/payment/clear-queue", async (req, res) => {
       message: `${cleared} pagamento(s) removido(s) da fila`,
     });
   } catch (error) {
-    console.error("❌ Erro ao limpar fila:", error.message);
+    console.error('❌ Erro ao limpar fila:', error.message);
     res.status(500).json({ success: false, error: error.message });
   }
 });
+*/
 
 // ============================================================================
-// FIM DA SEÇÃO DEPRECATED
+// FIM DA SEÇÃO DEPRECATED (MERCADO PAGO)
 // ============================================================================
-
-// ==========================================
-// --- PAGAMENTO STONE PINPAD ---
-// ==========================================
-
-/**
- * POST /api/payment/stone/create
- * Criar pagamento via Stone Pinpad
- *
- * Body esperado:
- * {
- *   amount: 100,           // Valor em centavos (100 = R$ 1,00)
- *   type: "CREDIT",        // "CREDIT" ou "DEBIT"
- *   installments: 1,       // Número de parcelas
- *   orderId: "order_123"   // ID do pedido
- * }
- */
-app.post("/api/payment/stone/create", async (req, res) => {
-  try {
-    const { amount, type, installments, orderId } = req.body;
-    const storeId = req.storeId;
-
-    // Validações
-    if (!amount || amount <= 0) {
-      return res.status(400).json({
-        error: "Campo 'amount' é obrigatório e deve ser maior que zero",
-      });
-    }
-
-    if (!type || !["CREDIT", "DEBIT"].includes(type.toUpperCase())) {
-      return res.status(400).json({
-        error: "Campo 'type' deve ser 'CREDIT' ou 'DEBIT'",
-      });
-    }
-
-    // Prepara payload para o Pinpad Stone
-    const payload = {
-      amount: parseInt(amount), // Garante que é número inteiro (centavos)
-      type: type.toUpperCase(),
-      installments: parseInt(installments) || 1,
-      installmentType: "MERCHANT", // Tipo de parcelamento
-    };
-
-    console.log(`💳 [STONE] Enviando pagamento para Pinpad...`);
-    console.log(`   Loja: ${storeId}`);
-    console.log(`   Valor: R$ ${(amount / 100).toFixed(2)}`);
-    console.log(`   Tipo: ${type}`);
-    console.log(`   Parcelas: ${installments || 1}`);
-    if (orderId) console.log(`   Order ID: ${orderId}`);
-
-    // Envia requisição para o servidor TEF local
-    const STONE_TEF_URL = "http://localhost:6800/api/v1/transactions";
-    const response = await fetch(STONE_TEF_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(120000), // 2 minutos de timeout
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.message || `HTTP ${response.status}`);
-    }
-
-    const data = await response.json();
-    console.log(`✅ [STONE] Resposta recebida:`, data);
-
-    // Verifica se foi aprovado
-    const approved = data.responseCode === "0000";
-
-    return res.json({
-      success: approved,
-      id: data.transactionId, // ID da transação Stone
-      responseCode: data.responseCode,
-      responseMessage: data.responseMessage,
-      transactionId: data.transactionId,
-      authorizationCode: data.authorizationCode,
-      cardBrand: data.cardBrand,
-      cardNumber: data.cardNumber, // Últimos 4 dígitos
-      orderId: orderId,
-      status: approved ? "approved" : "rejected",
-      type: "stone",
-      raw: data, // Resposta completa
-    });
-  } catch (error) {
-    console.error("❌ [STONE] Erro na comunicação com Pinpad:", error.message);
-
-    // Erro de conexão - TEF não está rodando
-    if (error.name === "TypeError" && error.message.includes("fetch")) {
-      return res.status(503).json({
-        error: "TEF Stone não está disponível",
-        message: "Verifique se o aplicativo Stone está aberto e rodando",
-        details: "Não foi possível conectar em http://localhost:6800",
-      });
-    }
-
-    // Timeout - Operação demorou demais
-    if (error.name === "TimeoutError" || error.name === "AbortError") {
-      return res.status(408).json({
-        error: "Timeout na operação",
-        message: "O pagamento demorou muito tempo e foi cancelado",
-      });
-    }
-
-    // Erro genérico
-    return res.status(500).json({
-      error: "Erro ao processar pagamento Stone",
-      message: error.message,
-    });
-  }
-});
-
-/**
- * POST /api/payment/stone/cancel
- * Cancelar transação Stone
- *
- * Body esperado:
- * {
- *   transactionId: "abc123"  // ID da transação a ser cancelada
- * }
- */
-app.post("/api/payment/stone/cancel", async (req, res) => {
-  try {
-    const { transactionId } = req.body;
-    const storeId = req.storeId;
-
-    if (!transactionId) {
-      return res.status(400).json({
-        error: "Campo 'transactionId' é obrigatório",
-      });
-    }
-
-    console.log(`🔄 [STONE] Cancelando transação: ${transactionId}`);
-    console.log(`   Loja: ${storeId}`);
-
-    // Endpoint de cancelamento Stone
-    const STONE_TEF_URL = "http://localhost:6800/api/v1/transactions";
-    const cancelUrl = `${STONE_TEF_URL}/${transactionId}/cancel`;
-
-    const response = await fetch(cancelUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      signal: AbortSignal.timeout(60000), // 1 minuto
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.message || `HTTP ${response.status}`);
-    }
-
-    const data = await response.json();
-    console.log(`✅ [STONE] Cancelamento processado:`, data);
-
-    return res.json({
-      success: true,
-      message: "Transação cancelada com sucesso",
-      transactionId: transactionId,
-      raw: data,
-    });
-  } catch (error) {
-    console.error("❌ [STONE] Erro ao cancelar:", error.message);
-
-    return res.status(500).json({
-      error: "Erro ao cancelar pagamento Stone",
-      message: error.message,
-    });
-  }
-});
-
-/**
- * GET /api/payment/stone/status/:transactionId
- * Verificar status de transação Stone
- */
-app.get("/api/payment/stone/status/:transactionId", async (req, res) => {
-  try {
-    const { transactionId } = req.params;
-    const storeId = req.storeId;
-
-    if (!transactionId) {
-      return res.status(400).json({
-        error: "transactionId é obrigatório",
-      });
-    }
-
-    console.log(`🔍 [STONE] Consultando status: ${transactionId}`);
-    console.log(`   Loja: ${storeId}`);
-
-    // Endpoint de consulta Stone
-    const STONE_TEF_URL = "http://localhost:6800/api/v1/transactions";
-    const statusUrl = `${STONE_TEF_URL}/${transactionId}`;
-
-    const response = await fetch(statusUrl, {
-      method: "GET",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      signal: AbortSignal.timeout(30000), // 30 segundos
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.message || `HTTP ${response.status}`);
-    }
-
-    const data = await response.json();
-    console.log(`✅ [STONE] Status obtido:`, data);
-
-    // Mapeia status Stone para formato esperado
-    const approved = data.responseCode === "0000";
-    const status = approved ? "approved" : data.status || "pending";
-
-    return res.json({
-      success: true,
-      id: transactionId,
-      transactionId: transactionId,
-      status: status,
-      responseCode: data.responseCode,
-      responseMessage: data.responseMessage,
-      type: "stone",
-      raw: data,
-    });
-  } catch (error) {
-    console.error("❌ [STONE] Erro ao consultar status:", error.message);
-
-    return res.status(500).json({
-      error: "Erro ao consultar status Stone",
-      message: error.message,
-    });
-  }
-});
-
-/**
- * GET /api/payment/stone/health
- * Verificar se o TEF Stone está disponível
- */
-app.get("/api/payment/stone/health", async (req, res) => {
-  try {
-    console.log(`🏥 [STONE] Verificando saúde do TEF...`);
-
-    // Tenta fazer ping no servidor TEF
-    const response = await fetch("http://localhost:6800/health", {
-      method: "GET",
-      signal: AbortSignal.timeout(5000),
-    });
-
-    const data = await response.json().catch(() => ({}));
-
-    return res.json({
-      success: true,
-      message: "TEF Stone está online",
-      status: data,
-    });
-  } catch (error) {
-    console.error("❌ [STONE] TEF não disponível:", error.message);
-
-    return res.status(503).json({
-      success: false,
-      message: "TEF Stone não está disponível",
-      error: error.message,
-    });
-  }
-});
 
 // --- Rotas de IA ---
 
@@ -4385,6 +4184,157 @@ app.get("/api/super-admin/dashboard", async (req, res) => {
     console.error("❌ Erro no Super Admin Dashboard:", error);
     res.status(500).json({
       error: "Erro ao gerar dashboard",
+      message: error.message,
+    });
+  }
+});
+
+// 📊 Top 5 Produtos Mais Vendidos de uma Loja
+app.get("/api/super-admin/store/:storeId/top-products", async (req, res) => {
+  try {
+    // Verifica autenticação de Super Admin
+    const superAdminPassword = req.headers["x-super-admin-password"];
+
+    if (!SUPER_ADMIN_PASSWORD) {
+      return res.status(503).json({
+        error: "Super Admin não configurado.",
+      });
+    }
+
+    if (superAdminPassword !== SUPER_ADMIN_PASSWORD) {
+      return res.status(401).json({
+        error: "Acesso negado. Senha de Super Admin inválida.",
+      });
+    }
+
+    const { storeId } = req.params;
+    console.log(`📊 [TOP-PRODUCTS] Buscando top produtos da loja ${storeId}`);
+
+    // Busca todos os pedidos pagos da loja
+    const orders = await db("orders")
+      .where({ store_id: storeId })
+      .whereIn("paymentStatus", ["paid", "authorized"])
+      .select("items");
+
+    // Agrupa vendas por produto
+    const productSales = {};
+
+    orders.forEach((order) => {
+      const items = parseJSON(order.items);
+      items.forEach((item) => {
+        if (!productSales[item.id]) {
+          productSales[item.id] = {
+            name: item.name,
+            sold: 0,
+            revenue: 0,
+          };
+        }
+        productSales[item.id].sold += item.quantity || 1;
+        productSales[item.id].revenue +=
+          (item.price || 0) * (item.quantity || 1);
+      });
+    });
+
+    // Converte para array e ordena por quantidade vendida
+    const topProducts = Object.values(productSales)
+      .sort((a, b) => b.sold - a.sold)
+      .slice(0, 5)
+      .map((p) => ({
+        name: p.name,
+        sold: p.sold,
+        revenue: parseFloat(p.revenue.toFixed(2)),
+      }));
+
+    console.log(`✅ [TOP-PRODUCTS] ${topProducts.length} produtos retornados`);
+
+    res.json(topProducts);
+  } catch (error) {
+    console.error("❌ Erro ao buscar top products:", error);
+    res.status(500).json({
+      error: "Erro ao buscar produtos mais vendidos",
+      message: error.message,
+    });
+  }
+});
+
+// 📈 Histórico de Vendas (Últimos N Dias)
+app.get("/api/super-admin/store/:storeId/sales-history", async (req, res) => {
+  try {
+    // Verifica autenticação de Super Admin
+    const superAdminPassword = req.headers["x-super-admin-password"];
+
+    if (!SUPER_ADMIN_PASSWORD) {
+      return res.status(503).json({
+        error: "Super Admin não configurado.",
+      });
+    }
+
+    if (superAdminPassword !== SUPER_ADMIN_PASSWORD) {
+      return res.status(401).json({
+        error: "Acesso negado. Senha de Super Admin inválida.",
+      });
+    }
+
+    const { storeId } = req.params;
+    const days = parseInt(req.query.days) || 7;
+
+    console.log(
+      `📈 [SALES-HISTORY] Buscando últimos ${days} dias da loja ${storeId}`
+    );
+
+    // Calcula data inicial
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - days);
+
+    // Busca pedidos pagos do período
+    const orders = await db("orders")
+      .where({ store_id: storeId })
+      .whereIn("paymentStatus", ["paid", "authorized"])
+      .where("timestamp", ">=", startDate.toISOString())
+      .select("timestamp", "total");
+
+    // Agrupa por dia
+    const salesByDay = {};
+
+    orders.forEach((order) => {
+      const date = new Date(order.timestamp);
+      const dateStr = date.toISOString().split("T")[0]; // YYYY-MM-DD
+
+      if (!salesByDay[dateStr]) {
+        salesByDay[dateStr] = 0;
+      }
+      salesByDay[dateStr] += parseFloat(order.total) || 0;
+    });
+
+    // Converte para array e adiciona nome do dia da semana
+    const dayNames = [
+      "Domingo",
+      "Segunda",
+      "Terça",
+      "Quarta",
+      "Quinta",
+      "Sexta",
+      "Sábado",
+    ];
+
+    const salesHistory = Object.entries(salesByDay)
+      .map(([date, value]) => {
+        const dateObj = new Date(date + "T12:00:00"); // Meio-dia para evitar problemas de timezone
+        return {
+          day: dayNames[dateObj.getDay()],
+          date: date,
+          value: parseFloat(value.toFixed(2)),
+        };
+      })
+      .sort((a, b) => new Date(a.date) - new Date(b.date));
+
+    console.log(`✅ [SALES-HISTORY] ${salesHistory.length} dias com vendas`);
+
+    res.json(salesHistory);
+  } catch (error) {
+    console.error("❌ Erro ao buscar sales history:", error);
+    res.status(500).json({
+      error: "Erro ao buscar histórico de vendas",
       message: error.message,
     });
   }
