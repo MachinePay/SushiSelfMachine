@@ -8,6 +8,7 @@ import jwt from "jsonwebtoken";
 import { createClient } from "redis";
 import paymentRoutes from "./routes/payment.js";
 import * as paymentService from "./services/paymentService.js";
+import * as stonePinpadController from "./stonePinpadController copy.js";
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -3484,6 +3485,33 @@ app.post("/api/payment/stone/register", async (req, res) => {
     });
   }
 });
+
+/**
+ * POST /api/payment/stone/create
+ * Criar pagamento via Stone Pinpad (DLL)
+ */
+app.post("/api/payment/stone/create", stonePinpadController.createStonePayment);
+
+/**
+ * POST /api/payment/stone/cancel
+ * Cancelar transação Stone
+ */
+app.post("/api/payment/stone/cancel", stonePinpadController.cancelStonePayment);
+
+/**
+ * GET /api/payment/stone/status/:transactionId
+ * Consultar status de transação Stone
+ */
+app.get(
+  "/api/payment/stone/status/:transactionId",
+  stonePinpadController.checkStoneStatus
+);
+
+/**
+ * GET /api/payment/stone/health
+ * Health check do TEF Stone
+ */
+app.get("/api/payment/stone/health", stonePinpadController.checkStoneHealth);
 
 // --- Rotas de IA ---
 
