@@ -2,7 +2,8 @@
 import { getCurrentStoreId } from "../utils/tenantResolver";
 import api from "./api"; // 🆕 Importa instância com interceptor
 
-const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:3001";
+// Força sempre backend Render para o cardápio e demais APIs
+const BASE_URL = "https://<SEU_BACKEND_RENDER>.onrender.com"; // Substitua pela sua URL Render
 const API_URL = `${BASE_URL}/api`;
 
 /**

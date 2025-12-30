@@ -10,11 +10,15 @@ import {
   createPixPayment,
   createCardPayment,
   checkPaymentStatus,
-  cancelPayment,
+  createCardPaymentMock,
 } from "../services/paymentService";
+import { cancelPixPayment } from "../services/paymentService";
 import type { Order, CartItem } from "../types";
 
-const BACKEND_URL = import.meta.env.VITE_API_URL || "http://localhost:3001";
+// Força backend Render para tudo, exceto Pin Pad (que usa local)
+const RENDER_BACKEND_URL = "https://<SEU_BACKEND_RENDER>.onrender.com"; // Substitua pelo seu endpoint Render
+const LOCAL_BACKEND_URL = "http://localhost:3001";
+const BACKEND_URL = RENDER_BACKEND_URL;
 
 // 🏪 Helper para adicionar x-store-id em todas as requisições
 const fetchWithStoreId = async (url: string, options: RequestInit = {}) => {
@@ -55,8 +59,8 @@ const PaymentPage: React.FC = () => {
   // Estado que ATIVA o React Query (substitui o loop while)
   const [activePayment, setActivePayment] = useState<ActivePaymentState>(null);
 
-  // Ref para limpeza (cleanup) ao desmontar a página
-  const paymentIdRef = useRef<string | null>(null);
+  // Ref para limpeza (cleanup) ao desmontar a página (guarda tipo e id)
+  const paymentRef = useRef<ActivePaymentState>(null);
 
   // --- REACT QUERY: POLLING INTELIGENTE ---
   // Substitui o loop while. Só roda quando activePayment existe.
@@ -64,17 +68,19 @@ const PaymentPage: React.FC = () => {
     queryKey: ["paymentStatus", activePayment?.id, activePayment?.type],
     queryFn: async () => {
       if (!activePayment) return null;
+      // Só faz polling para PIX
       const result = await checkPaymentStatus(activePayment.id);
       if (!result.success)
         throw new Error(result.error || "Erro ao verificar status");
       return result;
     },
-    // Só executa se tiver um pagamento ativo e não tiver finalizado ainda
-    enabled: !!activePayment && status === "processing",
-    // Polling a cada 3 segundos
+    // Só executa se for PIX e estiver processando
+    enabled:
+      !!activePayment &&
+      activePayment.type === "pix" &&
+      status === "processing",
     refetchInterval: (query) => {
       const data = query.state.data;
-      // Para o polling se aprovado, cancelado ou rejeitado (status final)
       if (
         data?.status === "approved" ||
         data?.status === "FINISHED" ||
@@ -84,13 +90,16 @@ const PaymentPage: React.FC = () => {
         return false;
       return 3000;
     },
-    // Não refazer busca se o usuário trocar de janela (evita bugs de foco)
     refetchOnWindowFocus: false,
   });
 
   // --- EFEITO: Monitora o status vindo do React Query ---
   useEffect(() => {
-    if (paymentStatusData?.status === "approved" && activePayment) {
+    if (
+      paymentStatusData?.status === "approved" &&
+      activePayment &&
+      status === "processing"
+    ) {
       console.log(
         "✅ Pagamento detectado pelo React Query:",
         paymentStatusData
@@ -111,23 +120,22 @@ const PaymentPage: React.FC = () => {
       console.log("❌ Pagamento cancelado/rejeitado:", paymentStatusData);
       handlePaymentFailure(paymentStatusData);
     }
-  }, [paymentStatusData, activePayment]);
+  }, [paymentStatusData, activePayment, status]);
 
   // --- EFEITO: Cleanup de Segurança (Zombie Killer) ---
   useEffect(() => {
-    paymentIdRef.current = activePayment?.id || null;
+    paymentRef.current = activePayment;
   }, [activePayment]);
 
   useEffect(() => {
     return () => {
-      // Se o componente desmontar (usuário clicar em Voltar) e tiver pagamento pendente
-      if (paymentIdRef.current) {
+      // Só cancela PIX no cleanup se ainda está processando
+      if (paymentRef.current?.type === "pix" && status === "processing") {
         console.log(
-          `🧹 Cleanup: Cancelando pagamento ${paymentIdRef.current} no backend...`
+          `🧹 Cleanup: Cancelando pagamento PIX ${paymentRef.current.id} no backend...`
         );
-        // Usa fetch com keepalive para garantir que o cancelamento vá mesmo fechando a aba
         fetchWithStoreId(
-          `${BACKEND_URL}/api/payment/cancel/${paymentIdRef.current}`,
+          `${BACKEND_URL}/api/payment/cancel/${paymentRef.current.id}`,
           {
             method: "DELETE",
             keepalive: true,
@@ -135,10 +143,17 @@ const PaymentPage: React.FC = () => {
         ).catch((err) => console.error("Erro no cleanup:", err));
       }
     };
-  }, []);
+  }, [status]);
 
   // --- Lógica de Falha de Pagamento ---
-  const handlePaymentFailure = (data: any) => {
+  type PaymentFailureData = {
+    message?: string;
+    reason?: string;
+    orderId?: string;
+    paymentStatus?: string;
+  };
+
+  const handlePaymentFailure = (data: PaymentFailureData) => {
     setActivePayment(null); // Para o polling
     setStatus("error");
 
@@ -253,7 +268,29 @@ const PaymentPage: React.FC = () => {
     setPaymentStatusMessage("Gerando QR Code...");
 
     try {
-      const orderId = await createOrder();
+      // Força backend Render para PIX
+      const orderResp = await fetchWithStoreId(
+        `${RENDER_BACKEND_URL}/api/orders`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            userId: currentUser!.id,
+            userName: currentUser!.name,
+            items: cartItems.map((i) => ({
+              id: i.id,
+              name: i.name,
+              quantity: i.quantity,
+              price: i.price,
+            })),
+            total: cartTotal,
+            paymentId: null,
+            observation: observation,
+          }),
+        }
+      );
+      if (!orderResp.ok) throw new Error("Erro ao criar pedido");
+      const data = await orderResp.json();
+      const orderId = data.id;
 
       const result = await createPixPayment({
         amount: cartTotal,
@@ -284,23 +321,43 @@ const PaymentPage: React.FC = () => {
     setPaymentStatusMessage("Conectando à maquininha...");
 
     try {
-      const orderId = await createOrder();
+      // Sempre usa backend local para Pin Pad
+      const orderResp = await fetchWithStoreId(
+        `${LOCAL_BACKEND_URL}/api/orders`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            userId: currentUser!.id,
+            userName: currentUser!.name,
+            items: cartItems.map((i) => ({
+              id: i.id,
+              name: i.name,
+              quantity: i.quantity,
+              price: i.price,
+            })),
+            total: cartTotal,
+            paymentId: null,
+            observation: observation,
+          }),
+        }
+      );
+      if (!orderResp.ok) throw new Error("Erro ao criar pedido");
+      const data = await orderResp.json();
+      const orderId = data.id;
 
-      const result = await createCardPayment({
+      // Usando o mock temporariamente
+      const result = await createCardPaymentMock({
         amount: cartTotal,
-        description: `Pedido ${currentUser!.name}`,
-        orderId: orderId,
         paymentMethod: paymentMethod as "credit" | "debit",
       });
 
       if (!result.success || !result.paymentId) {
-        throw new Error(result.error || "Erro na maquininha");
+        throw new Error(result.message || "Pagamento recusado");
       }
 
-      setPaymentStatusMessage("Aguardando pagamento na maquininha...");
-
-      // Inicia Polling Automático via React Query
-      setActivePayment({ id: result.paymentId, type: "card", orderId });
+      setPaymentStatusMessage("Pagamento aprovado! Finalizando pedido...");
+      // Finaliza direto, sem polling
+      await finalizeOrder(orderId, result.paymentId, "card");
     } catch (err: any) {
       console.error(err);
       setStatus("error");
@@ -322,12 +379,13 @@ const PaymentPage: React.FC = () => {
 
     if (result.isConfirmed) {
       try {
-        const cancelResult = await cancelPayment(activePayment.id);
-
-        if (!cancelResult.success) {
-          throw new Error(cancelResult.error || "Erro ao cancelar");
+        // Só permite cancelar se for PIX
+        if (activePayment.type === "pix") {
+          const cancelResult = await cancelPixPayment(activePayment.id);
+          if (!cancelResult.success) {
+            throw new Error("Erro ao cancelar PIX");
+          }
         }
-
         setActivePayment(null); // Para o polling imediatamente
         setStatus("idle");
         setQrCodeBase64(null);
