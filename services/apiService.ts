@@ -3,7 +3,7 @@ import { getCurrentStoreId } from "../utils/tenantResolver";
 import api from "./api"; // 🆕 Importa instância com interceptor
 
 // Força sempre backend Render para o cardápio e demais APIs
-const BASE_URL = "https://<SEU_BACKEND_RENDER>.onrender.com"; // Substitua pela sua URL Render
+const BASE_URL = "https://backendkioskpro.onrender.com"; // Substitua pela sua URL Render
 const API_URL = `${BASE_URL}/api`;
 
 /**
