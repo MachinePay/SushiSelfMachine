@@ -16,8 +16,8 @@ import { cancelPixPayment } from "../services/paymentService";
 import type { Order, CartItem } from "../types";
 
 // Força backend Render para tudo, exceto Pin Pad (que usa local)
-const RENDER_BACKEND_URL = "https://backendkioskpro.onrender.com"; // Substitua pelo seu endpoint Render
-const LOCAL_BACKEND_URL = "http://localhost:5000";
+const RENDER_BACKEND_URL = "https://backendkioskpro.onrender.com"; // Backend produção (Render)
+const LOCAL_BACKEND_URL = "http://localhost:5000"; // Backend local para cartão
 const BACKEND_URL = RENDER_BACKEND_URL;
 
 // 🏪 Helper para adicionar x-store-id em todas as requisições
@@ -345,11 +345,20 @@ const PaymentPage: React.FC = () => {
       const data = await orderResp.json();
       const orderId = data.id;
 
-      // Usando o mock temporariamente
-      const result = await createCardPaymentMock({
-        amount: cartTotal,
-        paymentMethod: paymentMethod as "credit" | "debit",
+      // Mock temporário: envia para backend local, incluindo parcelas
+      const resp = await fetch(`${LOCAL_BACKEND_URL}/api/payment/card/mock`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-store-id": getCurrentStoreId(),
+        },
+        body: JSON.stringify({
+          amount: cartTotal,
+          paymentMethod: paymentMethod as "credit" | "debit",
+          parcelas: 1,
+        }),
       });
+      const result = await resp.json();
 
       if (!result.success || !result.paymentId) {
         throw new Error(result.message || "Pagamento recusado");
