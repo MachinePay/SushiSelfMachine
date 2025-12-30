@@ -16,7 +16,7 @@ import { cancelPixPayment } from "../services/paymentService";
 import type { Order, CartItem } from "../types";
 
 // Força backend Render para tudo, exceto Pin Pad (que usa local)
-const RENDER_BACKEND_URL = "https://<SEU_BACKEND_RENDER>.onrender.com"; // Substitua pelo seu endpoint Render
+const RENDER_BACKEND_URL = "https://backendkioskpro.onrender.com"; // Substitua pelo seu endpoint Render
 const LOCAL_BACKEND_URL = "http://localhost:3001";
 const BACKEND_URL = RENDER_BACKEND_URL;
 
