@@ -360,13 +360,13 @@ const PaymentPage: React.FC = () => {
       });
       const result = await resp.json();
 
-      if (!result.success || !result.paymentId) {
-        throw new Error(result.message || "Pagamento recusado");
+      if (!result.aprovado) {
+        throw new Error(result.mensagem || "Pagamento recusado");
       }
 
       setPaymentStatusMessage("Pagamento aprovado! Finalizando pedido...");
       // Finaliza direto, sem polling
-      await finalizeOrder(orderId, result.paymentId, "card");
+      await finalizeOrder(orderId, result.nsu, "card");
     } catch (err: any) {
       console.error(err);
       setStatus("error");
